@@ -27,6 +27,11 @@ import androidx.compose.ui.unit.sp
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.size
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import org.json.JSONArray
 import org.json.JSONObject
 
@@ -537,6 +542,11 @@ fun JsonUiRenderer(
     document: JsonUiDocument,
     onAction: (actionName: String) -> Unit = {}
 ) {
+    val context = LocalContext.current
+
+    // Trigger recomposition when local state changes (e.g., flashlight toggled)
+    var localRefreshTrigger by remember { mutableIntStateOf(0) }
+
     Column(
         modifier = Modifier
             .fillMaxWidth()
@@ -546,7 +556,15 @@ fun JsonUiRenderer(
             .padding(16.dp)
     ) {
         document.elements.forEach { element ->
-            RenderElement(element, onAction)
+            RenderElement(element, onAction = { actionName ->
+                if (actionName.startsWith("appfn:")) {
+                    AppFunctionManager.executeFunction(context, actionName) {
+                        localRefreshTrigger++ // trigger recomposition on state change
+                    }
+                }
+                // Preserve original callback so Event Logs continue to work
+                onAction(actionName)
+            })
         }
     }
 }

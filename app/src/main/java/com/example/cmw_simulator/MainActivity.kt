@@ -320,6 +320,13 @@ fun RemoteComposeTesterScreen(
                                         .format(Date())
                                     val log = "[$timestamp] 点击事件 → 组件ID: $id, 元数据: \"$metadata\""
                                     eventLogs = eventLogs + log
+
+                                    // 拦截并执行 AppFunctions
+                                    if (metadata.startsWith("appfn:")) {
+                                        coroutineScope.launch(Dispatchers.Main) {
+                                            AppFunctionManager.executeFunction(context, metadata)
+                                        }
+                                    }
                                 }
                                 null
                             }

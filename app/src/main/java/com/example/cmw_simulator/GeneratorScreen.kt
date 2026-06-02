@@ -10,6 +10,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.google.ai.client.generativeai.GenerativeModel
@@ -79,9 +80,25 @@ Allowed chain operations: .fillMaxSize(), .fillMaxWidth(), .height(value.rdp), .
 """.trimIndent()
 
 val SDUI_JSON_SYSTEM_PROMPT = """
-You are an expert Server-Driven UI (SDUI) generator for Jetpack Compose Remote. Your task is to convert UI requirements into a strict JSON representation that directly maps to standard `RemoteCompose` DSL components.
+You are an expert Server-Driven UI (SDUI) designer for Android.
+Your task is to generate beautiful JSON representations that directly map to `RemoteCompose` elements.
 
 You must output ONLY valid, raw JSON. Do not include introductory text, explanations, or markdown code block formatting (do NOT use ```json).
+
+# SENSORY-AWARE WIDGET GENERATION (CRITICAL)
+Before rendering, you will be provided with a JSON object called <DeviceContext> containing live metrics of the user's phone.
+You must analyze this <DeviceContext> and generate a highly tailored, context-specific widget:
+1. Low Battery State: If "battery_level" is below 20 and "is_charging" is false, prioritize warning elements, red gradient color styling ("#E53935"), and add a helpful setting button mapping to "appfn:open_settings".
+2. Flashlight Status: If "flashlight_enabled" is true, make the UI glow (using light yellow backgrounds like "#FFF9C4" or "#FFF59D") and provide a button with "appfn:toggle_flashlight" to turn it off.
+3. System Volume Status: Show system volume index in the UI and allow adjusting it via buttons linked to "appfn:adjust_volume?direction=up" and "appfn:adjust_volume?direction=down".
+
+# Allowed AppFunctions Action Mappings:
+You can assign these exact URIs to any button's or box's "clickableAction" modifier:
+- "appfn:vibrate?duration=150" -> Haptic vibration feedback
+- "appfn:toast?message=<UTF8_text>" -> Native Android Toast message
+- "appfn:toggle_flashlight" -> Turn flashlight ON/OFF
+- "appfn:adjust_volume?direction=up" or "appfn:adjust_volume?direction=down" -> Adjust phone speaker volume
+- "appfn:open_settings" -> Launch system Settings App
 
 # JSON Schema Definition
 
@@ -202,6 +219,7 @@ fun GeneratorScreen(
     onJsonRender: () -> Unit = {},
 ) {
     val coroutineScope = rememberCoroutineScope()
+    val context = LocalContext.current
     var prompt by remember { mutableStateOf("") }
     var isLoading by remember { mutableStateOf(false) }
     var errorMessage by remember { mutableStateOf<String?>(null) }
@@ -370,10 +388,22 @@ fun GeneratorScreen(
                     errorMessage = null
                     coroutineScope.launch(Dispatchers.IO) {
                         try {
+                            // 1. 获取设备当前的 AppFunctions 实时上下文
+                            val contextJson = AppFunctionManager.getDeviceContext(context).toString()
+                            val enrichedPrompt = """
+                                <DeviceContext>
+                                $contextJson
+                                </DeviceContext>
+                                
+                                User Request: $prompt
+                            """.trimIndent()
                             withContext(Dispatchers.Main) {
-                                statusMessage = "正在调用 Gemini API 生成 SDUI JSON..."
+                                statusMessage = "正在采集本地 AppFunctions 状态并生成 UI..."
+                                android.util.Log.d("Generator", "Enriched Prompt:\n$enrichedPrompt")
                             }
-                            val jsonResponse = callGeminiJsonApi(prompt)
+
+                            // 2. 将装配了 AppFunctions 状态的 Prompt 传递给大模型
+                            val jsonResponse = callGeminiJsonApi(enrichedPrompt)
                             android.util.Log.d("Generator", "Gemini JSON response: $jsonResponse")
                             withContext(Dispatchers.Main) {
                                 statusMessage = "正在解析 JSON..."
@@ -407,10 +437,22 @@ fun GeneratorScreen(
                     errorMessage = null
                     coroutineScope.launch(Dispatchers.IO) {
                         try {
+                            // 1. 获取设备当前的 AppFunctions 实时上下文
+                            val contextJson = AppFunctionManager.getDeviceContext(context).toString()
+                            val enrichedPrompt = """
+                                <DeviceContext>
+                                $contextJson
+                                </DeviceContext>
+                                
+                                User Request: $prompt
+                            """.trimIndent()
                             withContext(Dispatchers.Main) {
-                                statusMessage = "正在调用 GLM API 生成 SDUI JSON..."
+                                statusMessage = "正在采集本地 AppFunctions 状态并生成 UI..."
+                                android.util.Log.d("Generator", "Enriched Prompt:\n$enrichedPrompt")
                             }
-                            val jsonResponse = callGlmJsonApi(prompt)
+
+                            // 2. 将装配了 AppFunctions 状态的 Prompt 传递给大模型
+                            val jsonResponse = callGlmJsonApi(enrichedPrompt)
                             android.util.Log.d("Generator", "GLM JSON response: $jsonResponse")
                             withContext(Dispatchers.Main) {
                                 statusMessage = "正在解析 JSON..."
@@ -447,14 +489,23 @@ fun GeneratorScreen(
                             }
                             cleanJsonResponse(prompt)
                         } else {
+                            // Inject device context for DSL mode too
+                            val contextJson = AppFunctionManager.getDeviceContext(context).toString()
+                            val enrichedPrompt = """
+                                <DeviceContext>
+                                $contextJson
+                                </DeviceContext>
+                                
+                                User Request: $prompt
+                            """.trimIndent()
                             withContext(Dispatchers.Main) {
-                                statusMessage = "正在调用 $selectedModel API..."
+                                statusMessage = "正在采集本地 AppFunctions 状态并调用 $selectedModel API..."
                             }
-                            // 1. Call selected AI API
+                            // 1. Call selected AI API with enriched prompt
                             val jsonResponse = if (selectedModel == "Gemini") {
-                                callGeminiApi(prompt)
+                                callGeminiApi(enrichedPrompt)
                             } else {
-                                callGlmApi(prompt)
+                                callGlmApi(enrichedPrompt)
                             }
                             withContext(Dispatchers.Main) {
                                 android.util.Log.d("Generator", "AI response: $jsonResponse")
@@ -609,14 +660,28 @@ private suspend fun callGeminiApi(prompt: String): String = withContext(Dispatch
  * Call the Gemini API with the SDUI JSON system prompt.
  * Uses gemini-2.5-flash to generate JSON UI documents.
  */
+/**
+ * Builds the full system prompt for JSON-based SDUI generation by combining
+ * the base SDUI_JSON_SYSTEM_PROMPT with dynamically injected AppFunctions.
+ */
+private fun buildJsonSystemPrompt(): String {
+    return SDUI_JSON_SYSTEM_PROMPT + "\n\n" + AppFunctionManager.buildPromptSection()
+}
+
+/**
+ * Call the Gemini API with the SDUI JSON system prompt.
+ * Dynamically injects available AppFunctions into the system prompt
+ * so the model knows what local tools it can bind to interactive elements.
+ */
 private suspend fun callGeminiJsonApi(prompt: String): String = withContext(Dispatchers.IO) {
     try {
         val apiKey = getGeminiApiKey()
+        val fullSystemPrompt = buildJsonSystemPrompt()
 
         val model = GenerativeModel(
-            modelName = "gemini-3.5-flash",
+            modelName = "gemini-2.5-flash",
             apiKey = apiKey,
-            systemInstruction = content { text(SDUI_JSON_SYSTEM_PROMPT) }
+            systemInstruction = content { text(fullSystemPrompt) }
         )
 
         val response = model.generateContent(prompt)
@@ -635,7 +700,11 @@ private suspend fun callGeminiJsonApi(prompt: String): String = withContext(Disp
 private suspend fun callGlmApi(prompt: String): String = withContext(Dispatchers.IO) {
     try {
         val apiKey = "0a5cd5342cd24f2f8e4e44af433be613.AOsuKOY2hIaOKgVT"
-        val client = OkHttp3Client()
+        val client = OkHttp3Client.Builder()
+            .connectTimeout(30, java.util.concurrent.TimeUnit.SECONDS)
+            .readTimeout(120, java.util.concurrent.TimeUnit.SECONDS)
+            .writeTimeout(30, java.util.concurrent.TimeUnit.SECONDS)
+            .build()
 
         // Build request JSON
         val requestJson = JSONObject().apply {
@@ -698,14 +767,18 @@ private suspend fun callGlmApi(prompt: String): String = withContext(Dispatchers
 private suspend fun callGlmJsonApi(prompt: String): String = withContext(Dispatchers.IO) {
     try {
         val apiKey = "0a5cd5342cd24f2f8e4e44af433be613.AOsuKOY2hIaOKgVT"
-        val client = OkHttp3Client()
+        val client = OkHttp3Client.Builder()
+            .connectTimeout(30, java.util.concurrent.TimeUnit.SECONDS)
+            .readTimeout(120, java.util.concurrent.TimeUnit.SECONDS)
+            .writeTimeout(30, java.util.concurrent.TimeUnit.SECONDS)
+            .build()
 
         val requestJson = JSONObject().apply {
             put("model", "glm-4-flash")
             put("messages", org.json.JSONArray().apply {
                 put(JSONObject().apply {
                     put("role", "system")
-                    put("content", SDUI_JSON_SYSTEM_PROMPT)
+                    put("content", buildJsonSystemPrompt())
                 })
                 put(JSONObject().apply {
                     put("role", "user")
