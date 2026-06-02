@@ -209,7 +209,7 @@ fun GeneratorScreen(
 
     // Model selection state
     var selectedModel by remember { mutableStateOf("GLM 5.1") }
-    val models = listOf("Gemini", "GLM 5.1", "GLM JSON", "Paste DSL", "Paste JSON")
+    val models = listOf("Gemini", "Gemini JSON", "GLM 5.1", "GLM JSON", "Paste DSL", "Paste JSON")
 
     Column(
         modifier = Modifier
@@ -230,6 +230,7 @@ fun GeneratorScreen(
             "Paste DSL" -> "粘贴 Remote Compose Kotlin DSL 代码，发送到后端编译。"
             "Paste JSON" -> "粘贴 JSON UI 描述，直接在本地渲染，无需后端。"
             "GLM JSON" -> "输入自然语言描述，GLM 将生成 SDUI JSON 并在本地渲染。"
+            "Gemini JSON" -> "输入自然语言描述，Gemini 将生成 SDUI JSON 并在本地渲染。"
             else -> "输入自然语言描述，AI 将生成 Remote Compose 文档并预览。"
         }
         Text(
@@ -244,11 +245,25 @@ fun GeneratorScreen(
             style = MaterialTheme.typography.titleSmall,
             fontWeight = FontWeight.Bold
         )
+        // AI models row
         Row(
             modifier = Modifier.fillMaxWidth(),
             horizontalArrangement = Arrangement.spacedBy(8.dp)
         ) {
-            models.forEach { model ->
+            models.filter { !it.startsWith("Paste") }.forEach { model ->
+                FilterChip(
+                    selected = selectedModel == model,
+                    onClick = { selectedModel = model },
+                    label = { Text(model) }
+                )
+            }
+        }
+        // Paste options row
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            models.filter { it.startsWith("Paste") }.forEach { model ->
                 FilterChip(
                     selected = selectedModel == model,
                     onClick = { selectedModel = model },
@@ -262,13 +277,11 @@ fun GeneratorScreen(
         val labelText = when (selectedModel) {
             "Paste DSL" -> "Kotlin DSL 代码"
             "Paste JSON" -> "JSON UI"
-            "GLM JSON" -> "描述你想要的 UI"
             else -> "描述你想要的 UI"
         }
         val placeholderText = when (selectedModel) {
             "Paste DSL" -> "粘贴 Kotlin DSL，例如：RemoteColumn { ... }"
             "Paste JSON" -> "粘贴 JSON，例如：{ \"backgroundColor\": \"#FFF\", \"elements\": [...] }"
-            "GLM JSON" -> "例如：帮我生成一个包含标题和点赞按钮的商品卡片"
             else -> "例如：帮我生成一个包含标题和点赞按钮的商品卡片"
         }
         OutlinedTextField(
@@ -310,6 +323,7 @@ fun GeneratorScreen(
             "Paste DSL" -> "🚀 编译并渲染"
             "Paste JSON" -> "🚀 直接渲染"
             "GLM JSON" -> "✨ 生成并渲染"
+            "Gemini JSON" -> "✨ 生成并渲染"
             else -> "✨ 生成并预览"
         }
         Button(
@@ -331,6 +345,13 @@ fun GeneratorScreen(
                     errorMessage = null
                     coroutineScope.launch {
                         try {
+                            // 1. Convert JSON to Kotlin DSL for display
+                            val kotlinDsl = convertJsonToKotlinDsl(prompt)
+                            viewModel.setJsonDslData(prompt, kotlinDsl)
+                            android.util.Log.d("Generator", "Converted Kotlin DSL:\n$kotlinDsl")
+                            statusMessage = "转换后的 Kotlin DSL:\n${kotlinDsl.take(500)}${if (kotlinDsl.length > 500) "\n..." else ""}"
+
+                            // 2. Parse and render
                             val doc = parseJsonUiDocument(prompt)
                             viewModel.jsonUiDocument = doc
                             isLoading = false
@@ -338,6 +359,43 @@ fun GeneratorScreen(
                         } catch (e: Exception) {
                             errorMessage = "JSON 解析失败: ${e.message}"
                             isLoading = false
+                        }
+                    }
+                    return@Button
+                }
+
+                // ── Gemini JSON: generate SDUI JSON via Gemini, render locally ──
+                if (selectedModel == "Gemini JSON") {
+                    isLoading = true
+                    errorMessage = null
+                    coroutineScope.launch(Dispatchers.IO) {
+                        try {
+                            withContext(Dispatchers.Main) {
+                                statusMessage = "正在调用 Gemini API 生成 SDUI JSON..."
+                            }
+                            val jsonResponse = callGeminiJsonApi(prompt)
+                            android.util.Log.d("Generator", "Gemini JSON response: $jsonResponse")
+                            withContext(Dispatchers.Main) {
+                                statusMessage = "正在解析 JSON..."
+                            }
+                            val cleaned = cleanJsonResponse(jsonResponse)
+                            val doc = parseJsonUiDocument(cleaned)
+                            val kotlinDsl = convertJsonToKotlinDsl(cleaned)
+                            withContext(Dispatchers.Main) {
+                                viewModel.jsonUiDocument = doc
+                                viewModel.setJsonDslData(cleaned, kotlinDsl)
+                                android.util.Log.d("Generator", "Converted Kotlin DSL:\n$kotlinDsl")
+                                statusMessage = "转换后的 Kotlin DSL:\n${kotlinDsl.take(500)}${if (kotlinDsl.length > 500) "\n..." else ""}"
+                                isLoading = false
+                                onJsonRender()
+                            }
+                        } catch (e: Exception) {
+                            val detail = e.message ?: e.javaClass.simpleName
+                            withContext(Dispatchers.Main) {
+                                errorMessage = "Gemini JSON 生成失败: $detail"
+                                statusMessage = null
+                                isLoading = false
+                            }
                         }
                     }
                     return@Button
@@ -359,9 +417,12 @@ fun GeneratorScreen(
                             }
                             val cleaned = cleanJsonResponse(jsonResponse)
                             val doc = parseJsonUiDocument(cleaned)
+                            val kotlinDsl = convertJsonToKotlinDsl(cleaned)
                             withContext(Dispatchers.Main) {
                                 viewModel.jsonUiDocument = doc
-                                statusMessage = null
+                                viewModel.setJsonDslData(cleaned, kotlinDsl)
+                                android.util.Log.d("Generator", "Converted Kotlin DSL:\n$kotlinDsl")
+                                statusMessage = "转换后的 Kotlin DSL:\n${kotlinDsl.take(500)}${if (kotlinDsl.length > 500) "\n..." else ""}"
                                 isLoading = false
                                 onJsonRender()
                             }
@@ -472,6 +533,28 @@ fun GeneratorScreen(
             color = MaterialTheme.colorScheme.onSurfaceVariant
         )
 
+        // Show generated Kotlin DSL if available (from Paste JSON)
+        viewModel.generatedKotlinDsl?.let { dsl ->
+            HorizontalDivider(modifier = Modifier.padding(vertical = 8.dp))
+            Text(
+                text = "转换后的 Kotlin DSL:",
+                fontWeight = FontWeight.Bold,
+                style = MaterialTheme.typography.titleSmall
+            )
+            Surface(
+                modifier = Modifier.fillMaxWidth(),
+                shape = MaterialTheme.shapes.small,
+                color = Color(0xFFF5F5F5)
+            ) {
+                Text(
+                    text = dsl,
+                    modifier = Modifier.padding(8.dp),
+                    fontSize = 11.sp,
+                    fontFamily = FontFamily.Monospace
+                )
+            }
+        }
+
         // Show generated JSON if available
         viewModel.generatedJson?.let { json ->
             HorizontalDivider(modifier = Modifier.padding(vertical = 8.dp))
@@ -508,7 +591,7 @@ private suspend fun callGeminiApi(prompt: String): String = withContext(Dispatch
         val apiKey = getGeminiApiKey()
 
         val model = GenerativeModel(
-            modelName = "gemini-2.5-flash",
+            modelName = "gemini-3.5-flash",
             apiKey = apiKey,
             systemInstruction = content { text(REMOTE_COMPOSE_SYSTEM_PROMPT) }
         )
@@ -519,6 +602,29 @@ private suspend fun callGeminiApi(prompt: String): String = withContext(Dispatch
         result
     } catch (e: Exception) {
         throw Exception("Gemini API 调用失败: ${e.message}", e)
+    }
+}
+
+/**
+ * Call the Gemini API with the SDUI JSON system prompt.
+ * Uses gemini-2.5-flash to generate JSON UI documents.
+ */
+private suspend fun callGeminiJsonApi(prompt: String): String = withContext(Dispatchers.IO) {
+    try {
+        val apiKey = getGeminiApiKey()
+
+        val model = GenerativeModel(
+            modelName = "gemini-3.5-flash",
+            apiKey = apiKey,
+            systemInstruction = content { text(SDUI_JSON_SYSTEM_PROMPT) }
+        )
+
+        val response = model.generateContent(prompt)
+        val result = response.text ?: throw IllegalStateException("Empty response from Gemini")
+
+        result
+    } catch (e: Exception) {
+        throw Exception("Gemini JSON API 调用失败: ${e.message}", e)
     }
 }
 

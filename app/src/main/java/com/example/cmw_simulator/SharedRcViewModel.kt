@@ -11,6 +11,9 @@ class SharedRcViewModel : ViewModel() {
     var generatedJson by mutableStateOf<String?>(null)
         private set
 
+    // Kotlin DSL generated from JSON (for display)
+    var generatedKotlinDsl by mutableStateOf<String?>(null)
+
     // JSON UI document for direct rendering
     var jsonUiDocument by mutableStateOf<JsonUiDocument?>(null)
 
@@ -19,9 +22,15 @@ class SharedRcViewModel : ViewModel() {
         generatedJson = json
     }
 
+    fun setJsonDslData(json: String, kotlinDsl: String) {
+        generatedJson = json
+        generatedKotlinDsl = kotlinDsl
+    }
+
     fun clear() {
         generatedRcBytes = null
         generatedJson = null
         jsonUiDocument = null
+        generatedKotlinDsl = null
     }
 }

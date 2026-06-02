@@ -249,7 +249,288 @@ private fun JSONObject.optModifier(): ModifierData? {
     )
 }
 
-// ── Compose Renderer ────────────────────────────────────────────────────────
+// ── JSON → Kotlin DSL Converter ────────────────────────────────────────────
+
+fun convertJsonToKotlinDsl(json: String): String {
+    val root = JSONObject(json)
+    val sb = StringBuilder()
+    val bgColor = root.optString("backgroundColor")?.takeIf { it.isNotBlank() }
+    if (bgColor != null) {
+        sb.appendLine("// Background: $bgColor")
+    }
+    val elements = root.optJSONArray("elements")
+    if (elements != null && elements.length() > 0) {
+        // Wrap top-level elements in a RemoteColumn if there are multiple
+        if (elements.length() == 1) {
+            sb.append(convertElementToDsl(elements.getJSONObject(0), 0))
+        } else {
+            sb.appendLine("RemoteColumn(")
+            sb.appendLine("    modifier = RemoteModifier.fillMaxWidth()")
+            sb.appendLine(") {")
+            for (i in 0 until elements.length()) {
+                sb.append(convertElementToDsl(elements.getJSONObject(i), 1))
+            }
+            sb.appendLine("}")
+        }
+    }
+    return sb.toString().trim()
+}
+
+private fun convertElementToDsl(obj: JSONObject, indent: Int): String {
+    val type = obj.optString("type", "")
+    val pad = "    ".repeat(indent)
+    val sb = StringBuilder()
+
+    when (type) {
+        "text", "RemoteText" -> {
+            val text = obj.optString("text", "")
+            val color = obj.optString("color", "#000000")
+            val fontSize = obj.optInt("fontSize", 14)
+            val fontWeight = obj.optString("fontWeight", "")
+            val mod = obj.optModifier()
+            sb.append(pad).append("RemoteText(")
+            if (mod != null) {
+                sb.appendLine()
+                sb.append(pad).append("    modifier = ").append(modifierToDsl(mod, indent + 1)).appendLine(",")
+                sb.append(pad).append("    text = \"$text\",")
+                sb.appendLine()
+                sb.append(pad).append("    color = ${colorToDsl(color)}.rc,")
+                sb.appendLine()
+                sb.append(pad).append("    fontSize = ${fontSize}.rsp")
+                if (fontWeight.isNotBlank()) {
+                    sb.appendLine(",")
+                    sb.append(pad).append("    fontWeight = FontWeight.$fontWeight")
+                }
+                sb.appendLine()
+                sb.append(pad).append(")")
+            } else {
+                sb.append("text = \"$text\", ")
+                sb.append("color = ${colorToDsl(color)}.rc, ")
+                sb.append("fontSize = ${fontSize}.rsp")
+                if (fontWeight.isNotBlank()) {
+                    sb.append(", fontWeight = FontWeight.$fontWeight")
+                }
+                sb.append(")")
+            }
+            sb.appendLine()
+        }
+
+        "spacer", "RemoteSpacer" -> {
+            val mod = obj.optModifier()
+            val height = obj.optInt("height", 0)
+            if (mod != null) {
+                val modDsl = modifierToDsl(mod, indent)
+                sb.append(pad).append("RemoteSpacer(modifier = ").append(modDsl).appendLine(")")
+            } else if (height > 0) {
+                sb.append(pad).appendLine("RemoteSpacer(modifier = RemoteModifier.height(${height}.rdp))")
+            } else {
+                sb.append(pad).appendLine("RemoteSpacer(modifier = RemoteModifier.height(8.rdp))")
+            }
+        }
+
+        "card" -> {
+            val paddingH = obj.optInt("paddingH", 16)
+            val paddingV = obj.optInt("paddingV", 12)
+            val color = obj.optString("color", "#FFFFFF")
+            val cornerRadius = obj.optInt("cornerRadius", 12)
+            val borderColor = obj.optString("borderColor").takeIf { it.isNotBlank() }
+            val borderWidth = obj.optInt("borderWidth", 0).takeIf { it > 0 }
+            val actionName = obj.optString("actionName").takeIf { it.isNotBlank() }
+            val children = obj.optJSONArray("children")
+            sb.append(pad).appendLine("RemoteBox(")
+            sb.append(pad).append("    modifier = RemoteModifier")
+            sb.append(".fillMaxWidth()")
+            sb.append(".background(${colorToDsl(color)}.rc)")
+            sb.append(".padding(horizontal = ${paddingH}.rdp, vertical = ${paddingV}.rdp)")
+            if (borderColor != null && borderWidth != null) {
+                sb.append(".border(${borderWidth}.rdp, ${colorToDsl(borderColor)}.rc)")
+            }
+            sb.appendLine(",")
+            if (actionName != null) {
+                sb.append(pad).appendLine("    clickableAction = \"$actionName\",")
+            }
+            sb.append(pad).appendLine("    cornerRadius = ${cornerRadius}.rdp")
+            sb.append(pad).append(") {")
+            if (children != null) {
+                sb.appendLine()
+                for (i in 0 until children.length()) {
+                    sb.append(convertElementToDsl(children.getJSONObject(i), indent + 1))
+                }
+                sb.append(pad).appendLine("}")
+            } else {
+                sb.appendLine(" }")
+            }
+        }
+
+        "row", "RemoteRow" -> {
+            val mod = obj.optModifier()
+            val children = obj.optJSONArray("children")
+            sb.append(pad).append("RemoteRow(")
+            if (mod != null) {
+                sb.appendLine()
+                sb.append(pad).append("    modifier = ").append(modifierToDsl(mod, indent + 1))
+                sb.appendLine()
+                sb.append(pad).appendLine(") {")
+            } else {
+                sb.appendLine("modifier = RemoteModifier.fillMaxWidth()) {")
+            }
+            if (children != null) {
+                for (i in 0 until children.length()) {
+                    sb.append(convertElementToDsl(children.getJSONObject(i), indent + 1))
+                }
+            }
+            sb.append(pad).appendLine("}")
+        }
+
+        "button" -> {
+            val text = obj.optString("text", "")
+            val color = obj.optString("color", "#6200EE")
+            val textColor = obj.optString("textColor", "#FFFFFF")
+            val fontSize = obj.optInt("fontSize", 14)
+            val cornerRadius = obj.optInt("cornerRadius", 20)
+            val actionName = obj.optString("actionName").takeIf { it.isNotBlank() }
+            sb.append(pad).appendLine("RemoteBox(")
+            sb.append(pad).append("    modifier = RemoteModifier")
+            sb.append(".background(${colorToDsl(color)}.rc)")
+            sb.append(".padding(12.rdp)")
+            if (actionName != null) {
+                sb.append(".clickable(\"$actionName\")")
+            }
+            sb.appendLine(",")
+            sb.append(pad).appendLine("    cornerRadius = ${cornerRadius}.rdp")
+            sb.append(pad).appendLine(") {")
+            val btnPad = "    ".repeat(indent + 1)
+            sb.append(btnPad).append("RemoteText(text = \"$text\", color = ${colorToDsl(textColor)}.rc, fontSize = ${fontSize}.rsp)")
+            sb.appendLine()
+            sb.append(pad).appendLine("}")
+        }
+
+        "divider" -> {
+            val color = obj.optString("color", "#CCCCCC")
+            sb.append(pad).appendLine("// Divider: ${colorToDsl(color)}")
+        }
+
+        "RemoteColumn" -> {
+            val mod = obj.optModifier()
+            val vArr = obj.optInt("verticalArrangement").takeIf { it != 0 }
+            val hAlign = obj.optString("horizontalAlignment").takeIf { it.isNotBlank() }
+            val children = obj.optJSONArray("children")
+            sb.append(pad).append("RemoteColumn(")
+            if (mod != null || vArr != null || hAlign != null) {
+                sb.appendLine()
+                if (mod != null) {
+                    sb.append(pad).append("    modifier = ").append(modifierToDsl(mod, indent + 1)).appendLine(",")
+                }
+                if (vArr != null) {
+                    sb.append(pad).appendLine("    verticalArrangement = ${vArr}.rdp,")
+                }
+                if (hAlign != null) {
+                    sb.append(pad).appendLine("    horizontalAlignment = \"$hAlign\",")
+                }
+            }
+            sb.append(pad).appendLine(") {")
+            if (children != null) {
+                for (i in 0 until children.length()) {
+                    sb.append(convertElementToDsl(children.getJSONObject(i), indent + 1))
+                }
+            }
+            sb.append(pad).appendLine("}")
+        }
+
+        "RemoteBox" -> {
+            val mod = obj.optModifier()
+            val contentAlign = obj.optString("contentAlignment").takeIf { it.isNotBlank() }
+            val children = obj.optJSONArray("children")
+            sb.append(pad).append("RemoteBox(")
+            if (mod != null || contentAlign != null) {
+                sb.appendLine()
+                if (mod != null) {
+                    sb.append(pad).append("    modifier = ").append(modifierToDsl(mod, indent + 1)).appendLine(",")
+                }
+                if (contentAlign != null) {
+                    sb.append(pad).appendLine("    contentAlignment = \"$contentAlign\",")
+                }
+            }
+            sb.append(pad).appendLine(") {")
+            if (children != null) {
+                for (i in 0 until children.length()) {
+                    sb.append(convertElementToDsl(children.getJSONObject(i), indent + 1))
+                }
+            }
+            sb.append(pad).appendLine("}")
+        }
+
+        "RemoteImage" -> {
+            val url = obj.optString("url", "")
+            sb.append(pad).appendLine("RemoteImage(url = \"$url\")")
+        }
+
+        else -> {
+            sb.append(pad).appendLine("// Unknown element type: $type")
+        }
+    }
+    return sb.toString()
+}
+
+private fun colorToDsl(hex: String): String {
+    return if (hex.equals("#000000", ignoreCase = true) || hex.equals("black", ignoreCase = true)) {
+        "Color.Black"
+    } else if (hex.equals("#FFFFFF", ignoreCase = true) || hex.equals("white", ignoreCase = true)) {
+        "Color.White"
+    } else if (hex.equals("#888888", ignoreCase = true) || hex.equals("gray", ignoreCase = true)) {
+        "Color.Gray"
+    } else {
+        val cleaned = hex.removePrefix("#")
+        if (cleaned.length == 6) "Color(0xFF${cleaned.uppercase()})" else "Color(0x${cleaned.uppercase()})"
+    }
+}
+
+private fun modifierToDsl(mod: ModifierData, indent: Int): String {
+    val parts = mutableListOf<String>()
+    if (mod.fillMaxSize) parts.add("fillMaxSize()")
+    if (mod.fillMaxWidth) parts.add("fillMaxWidth()")
+    if (mod.fillMaxHeight) parts.add("fillMaxHeight()")
+    mod.width?.let { parts.add("width(${it}.rdp)") }
+    mod.height?.let { parts.add("height(${it}.rdp)") }
+    mod.background?.let {
+        val hex = colorToArgbHex(it)
+        if (mod.cornerRadius != null) {
+            parts.add("background(${colorToDsl("#$hex")}.rc, cornerRadius = ${mod.cornerRadius}.rdp)")
+        } else {
+            parts.add("background(${colorToDsl("#$hex")}.rc)")
+        }
+    }
+    when (val p = mod.padding) {
+        is Int -> parts.add("padding(${p}.rdp)")
+        is JSONObject -> {
+            val start = p.optInt("start", 0)
+            val top = p.optInt("top", 0)
+            val end = p.optInt("end", 0)
+            val bottom = p.optInt("bottom", 0)
+            if (start != 0 || top != 0 || end != 0 || bottom != 0) {
+                parts.add("padding(start = ${start}.rdp, top = ${top}.rdp, end = ${end}.rdp, bottom = ${bottom}.rdp)")
+            }
+        }
+    }
+    if (mod.background == null && mod.cornerRadius != null) {
+        parts.add("cornerRadius(${mod.cornerRadius}.rdp)")
+    }
+    if (mod.clickableAction != null) {
+        parts.add("clickable(\"${mod.clickableAction}\")")
+    }
+    return if (parts.isEmpty()) {
+        "RemoteModifier"
+    } else {
+        "RemoteModifier." + parts.joinToString(".")
+    }
+}
+
+private fun colorToArgbHex(color: Color): String {
+    val argb = (color.value.toULong() and 0xFFFFFFFFu).toLong()
+    return String.format("%08X", argb)
+}
+
+// ── Compose Renderer ──
 
 @Composable
 fun JsonUiRenderer(
