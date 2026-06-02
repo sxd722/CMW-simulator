@@ -1,0 +1,53 @@
+[versions]
+agp = "9.2.1"
+kotlin = "2.3.21"
+coreKtx = "1.10.1"
+junit = "4.13.2"
+junitVersion = "1.1.5"
+espressoCore = "3.5.1"
+appcompat = "1.6.1"
+material = "1.10.0"
+composeBom = "2026.05.01"
+activityCompose = "1.13.0"
+lifecycleRuntimeKtx = "2.10.0"
+remoteCompose = "1.0.0-alpha11"
+navigationCompose = "2.9.8"
+generativeAi = "0.9.0"
+okhttp = "4.12.0"
+kotlinScripting = "2.3.21"
+
+[libraries]
+androidx-core-ktx = { group = "androidx.core", name = "core-ktx", version.ref = "coreKtx" }
+junit = { group = "junit", name = "junit", version.ref = "junit" }
+androidx-junit = { group = "androidx.test.ext", name = "junit", version.ref = "junitVersion" }
+androidx-espresso-core = { group = "androidx.test.espresso", name = "espresso-core", version.ref = "espressoCore" }
+androidx-appcompat = { group = "androidx.appcompat", name = "appcompat", version.ref = "appcompat" }
+material = { group = "com.google.android.material", name = "material", version.ref = "material" }
+compose-bom = { group = "androidx.compose", name = "compose-bom", version.ref = "composeBom" }
+compose-ui = { group = "androidx.compose.ui", name = "ui" }
+compose-ui-graphics = { group = "androidx.compose.ui", name = "ui-graphics" }
+compose-ui-tooling = { group = "androidx.compose.ui", name = "ui-tooling" }
+compose-ui-tooling-preview = { group = "androidx.compose.ui", name = "ui-tooling-preview" }
+compose-material3 = { group = "androidx.compose.material3", name = "material3" }
+compose-foundation = { group = "androidx.compose.foundation", name = "foundation" }
+activity-compose = { group = "androidx.activity", name = "activity-compose", version.ref = "activityCompose" }
+lifecycle-runtime-ktx = { group = "androidx.lifecycle", name = "lifecycle-runtime-ktx", version.ref = "lifecycleRuntimeKtx" }
+lifecycle-runtime-compose = { group = "androidx.lifecycle", name = "lifecycle-runtime-compose", version.ref = "lifecycleRuntimeKtx" }
+lifecycle-viewmodel-compose = { group = "androidx.lifecycle", name = "lifecycle-viewmodel-compose", version.ref = "lifecycleRuntimeKtx" }
+remote-player-core = { group = "androidx.compose.remote", name = "remote-player-core", version.ref = "remoteCompose" }
+remote-player-view = { group = "androidx.compose.remote", name = "remote-player-view", version.ref = "remoteCompose" }
+remote-player-compose = { group = "androidx.compose.remote", name = "remote-player-compose", version.ref = "remoteCompose" }
+remote-creation-core = { group = "androidx.compose.remote", name = "remote-creation-core", version.ref = "remoteCompose" }
+remote-core = { group = "androidx.compose.remote", name = "remote-core", version.ref = "remoteCompose" }
+navigation-compose = { group = "androidx.navigation", name = "navigation-compose", version.ref = "navigationCompose" }
+generative-ai = { group = "com.google.ai.client.generativeai", name = "generativeai", version.ref = "generativeAi" }
+okhttp = { group = "com.squareup.okhttp3", name = "okhttp", version.ref = "okhttp" }
+kotlin-scripting-core = { group = "org.jetbrains.kotlin", name = "kotlin-scripting-common", version.ref = "kotlinScripting" }
+kotlin-scripting-jvmruntime = { group = "org.jetbrains.kotlin", name = "kotlin-scripting-jvm", version.ref = "kotlinScripting" }
+kotlin-scripting-jsr223 = { group = "org.jetbrains.kotlin", name = "kotlin-scripting-jsr223", version.ref = "kotlinScripting" }
+kotlin-scripting-jvmhost = { group = "org.jetbrains.kotlin", name = "kotlin-scripting-jvm-host", version.ref = "kotlinScripting" }
+kotlin-compiler-embeddable = { group = "org.jetbrains.kotlin", name = "kotlin-compiler-embeddable", version.ref = "kotlinScripting" }
+
+[plugins]
+android-application = { id = "com.android.application", version.ref = "agp" }
+compose-compiler = { id = "org.jetbrains.kotlin.plugin.compose", version.ref = "kotlin" }
