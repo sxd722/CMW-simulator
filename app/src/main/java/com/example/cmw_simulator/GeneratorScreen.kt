@@ -211,12 +211,76 @@ Any component can include a "modifier" object. Supported modifier properties inc
 }
 """.trimIndent()
 
+val A2UI_JSON_SYSTEM_PROMPT = """
+You are an expert A2UI (Agent-to-UI) designer. You generate native Android UI using the A2UI v0.9 JSON protocol.
+
+You must output ONLY valid JSONL (one JSON object per line). Do not include explanations or markdown.
+
+# A2UI Protocol v0.9 — Message Sequence
+You must produce exactly 3 lines in this order:
+
+Line 1 — createSurface:
+{"version":"v0.9","createSurface":{"surfaceId":"main","catalogId":"https://a2ui.org/specification/v0_9/catalogs/basic/catalog.json","theme":{"primaryColor":"#6750A4"}}}
+
+Line 2 — updateComponents:
+{"version":"v0.9","updateComponents":{"surfaceId":"main","components":[...]}}
+
+Line 3 — updateDataModel (if needed):
+{"version":"v0.9","updateDataModel":{"surfaceId":"main","path":"/","value":{...}}}
+
+# Component Types
+All components have an "id" (string) and "component" (type string).
+One component MUST have id "root".
+
+## Layout Components
+- Column: {"id":"..","component":"Column","children":["child1","child2"],"justify":"start|center|end|spaceBetween|spaceEvenly","align":"start|center|end|stretch"}
+- Row: {"id":"..","component":"Row","children":["child1","child2"],"justify":"start|center|end|spaceBetween|spaceEvenly","align":"start|center|end|stretch"}
+- Card: {"id":"..","component":"Card","child":"singleChildId"}
+- List: {"id":"..","component":"List","children":[...],"direction":"vertical|horizontal"}
+- Tabs: {"id":"..","component":"Tabs","tabs":[{"title":"Tab1","child":"tab1ContentId"}]}
+
+## Display Components
+- Text: {"id":"..","component":"Text","text":"Hello","variant":"h1|h2|h3|h4|h5|body|caption"}
+- Image: {"id":"..","component":"Image","url":"https://...","fit":"cover|contain|fill","variant":"icon|avatar|smallFeature|mediumFeature|largeFeature|header"}
+- Icon: {"id":"..","component":"Icon","name":"add|close|settings|home|search|star|favorite|delete|edit|share|send|arrowBack|arrowForward|check|warning|volumeUp|volumeDown"}
+- Divider: {"id":"..","component":"Divider","axis":"horizontal|vertical"}
+
+## Interaction Components
+- Button: {"id":"..","component":"Button","child":"textId","variant":"default|primary|borderless","action":{"event":{"name":"action_name","context":{}}}}
+- TextField: {"id":"..","component":"TextField","label":"Name","value":{"path":"/form/name"},"variant":"shortText|longText|number|obscured"}
+- CheckBox: {"id":"..","component":"CheckBox","label":"Agree","value":{"path":"/form/agree"}}
+- Slider: {"id":"..","component":"Slider","label":"Volume","min":0,"max":100,"value":{"path":"/volume"}}
+- ChoicePicker: {"id":"..","component":"ChoicePicker","label":"Choose","variant":"mutuallyExclusive|multipleSelection","options":[{"label":"A","value":"a"}],"value":{"path":"/choice"}}
+
+# SENSORY-AWARE WIDGET GENERATION (CRITICAL)
+You will receive <DeviceContext> with live device state. Use it:
+1. Low Battery (<20%, not charging): Show red warning card with open_settings action.
+2. Flashlight on: Show glow effect and toggle button.
+3. Show volume level and provide volume adjustment buttons.
+
+# AppFunctions Integration
+For local device actions, use button actions with functionCall:
+- {"action":{"functionCall":{"call":"openUrl","args":{"url":"appfn:vibrate?duration=150"}}}}
+Or use event actions:
+- {"action":{"event":{"name":"vibrate"}}}
+
+The renderer will intercept event names matching "appfn:xxx" patterns as local device functions.
+
+# Design Rules
+1. Always produce exactly 3 JSONL lines (createSurface, updateComponents, updateDataModel).
+2. One component MUST have "id":"root".
+3. Use the adjacency list pattern — reference children by ID, not inline.
+4. Make UI beautiful, modern, Material Design 3 styled.
+5. Bind interactive values to the data model using {"path":"/key"}.
+""".trimIndent()
+
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun GeneratorScreen(
     viewModel: SharedRcViewModel,
     onGenerationSuccess: () -> Unit,
     onJsonRender: () -> Unit = {},
+    onA2uiRender: () -> Unit = {},
 ) {
     val coroutineScope = rememberCoroutineScope()
     val context = LocalContext.current
@@ -227,7 +291,10 @@ fun GeneratorScreen(
 
     // Model selection state
     var selectedModel by remember { mutableStateOf("GLM 5.1") }
-    val models = listOf("Gemini", "Gemini JSON", "GLM 5.1", "GLM JSON", "Paste DSL", "Paste JSON")
+    val geminiModels = listOf("Gemini", "Gemini JSON", "Gemini A2UI")
+    val glmModels = listOf("GLM 5.1", "GLM JSON", "GLM A2UI")
+    val pasteModels = listOf("Paste DSL", "Paste JSON", "Paste A2UI")
+    val allModels = geminiModels + glmModels + pasteModels
 
     Column(
         modifier = Modifier
@@ -247,8 +314,11 @@ fun GeneratorScreen(
         val descriptionText = when (selectedModel) {
             "Paste DSL" -> "粘贴 Remote Compose Kotlin DSL 代码，发送到后端编译。"
             "Paste JSON" -> "粘贴 JSON UI 描述，直接在本地渲染，无需后端。"
+            "Paste A2UI" -> "粘贴 A2UI JSONL 消息，直接渲染为原生 Android UI。"
             "GLM JSON" -> "输入自然语言描述，GLM 将生成 SDUI JSON 并在本地渲染。"
+            "GLM A2UI" -> "输入自然语言描述，GLM 将生成 A2UI 协议 JSONL 并渲染为原生 Android UI。"
             "Gemini JSON" -> "输入自然语言描述，Gemini 将生成 SDUI JSON 并在本地渲染。"
+            "Gemini A2UI" -> "输入自然语言描述，Gemini 将生成 A2UI 协议 JSONL 并渲染为原生 Android UI。"
             else -> "输入自然语言描述，AI 将生成 Remote Compose 文档并预览。"
         }
         Text(
@@ -263,12 +333,13 @@ fun GeneratorScreen(
             style = MaterialTheme.typography.titleSmall,
             fontWeight = FontWeight.Bold
         )
-        // AI models row
+        
+        // Row 1: Gemini
         Row(
             modifier = Modifier.fillMaxWidth(),
             horizontalArrangement = Arrangement.spacedBy(8.dp)
         ) {
-            models.filter { !it.startsWith("Paste") }.forEach { model ->
+            geminiModels.forEach { model ->
                 FilterChip(
                     selected = selectedModel == model,
                     onClick = { selectedModel = model },
@@ -276,12 +347,27 @@ fun GeneratorScreen(
                 )
             }
         }
-        // Paste options row
+        
+        // Row 2: GLM
         Row(
             modifier = Modifier.fillMaxWidth(),
             horizontalArrangement = Arrangement.spacedBy(8.dp)
         ) {
-            models.filter { it.startsWith("Paste") }.forEach { model ->
+            glmModels.forEach { model ->
+                FilterChip(
+                    selected = selectedModel == model,
+                    onClick = { selectedModel = model },
+                    label = { Text(model) }
+                )
+            }
+        }
+
+        // Row 3: Paste
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            pasteModels.forEach { model ->
                 FilterChip(
                     selected = selectedModel == model,
                     onClick = { selectedModel = model },
@@ -291,15 +377,17 @@ fun GeneratorScreen(
         }
 
         // Prompt input
-        val isPasteMode = selectedModel == "Paste DSL" || selectedModel == "Paste JSON"
+        val isPasteMode = selectedModel == "Paste DSL" || selectedModel == "Paste JSON" || selectedModel == "Paste A2UI"
         val labelText = when (selectedModel) {
             "Paste DSL" -> "Kotlin DSL 代码"
             "Paste JSON" -> "JSON UI"
+            "Paste A2UI" -> "A2UI JSONL"
             else -> "描述你想要的 UI"
         }
         val placeholderText = when (selectedModel) {
             "Paste DSL" -> "粘贴 Kotlin DSL，例如：RemoteColumn { ... }"
             "Paste JSON" -> "粘贴 JSON，例如：{ \"backgroundColor\": \"#FFF\", \"elements\": [...] }"
+            "Paste A2UI" -> "粘贴 A2UI JSONL，每行一个 JSON 消息..."
             else -> "例如：帮我生成一个包含标题和点赞按钮的商品卡片"
         }
         OutlinedTextField(
@@ -335,13 +423,39 @@ fun GeneratorScreen(
                 fontFamily = FontFamily.Monospace
             )
         }
+        
+        // Stats message
+        if (viewModel.tokenUsage != null || viewModel.generationSpeed != null) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(16.dp)
+            ) {
+                viewModel.tokenUsage?.let { usage ->
+                    Text(
+                        text = "📊 $usage",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.secondary
+                    )
+                }
+                viewModel.generationSpeed?.let { speed ->
+                    Text(
+                        text = "⚡ $speed",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.secondary
+                    )
+                }
+            }
+        }
 
         // Generate button
         val buttonText = when (selectedModel) {
             "Paste DSL" -> "🚀 编译并渲染"
             "Paste JSON" -> "🚀 直接渲染"
+            "Paste A2UI" -> "🚀 直接渲染"
             "GLM JSON" -> "✨ 生成并渲染"
+            "GLM A2UI" -> "✨ 生成并渲染"
             "Gemini JSON" -> "✨ 生成并渲染"
+            "Gemini A2UI" -> "✨ 生成并渲染"
             else -> "✨ 生成并预览"
         }
         Button(
@@ -350,12 +464,14 @@ fun GeneratorScreen(
                     errorMessage = when (selectedModel) {
                         "Paste DSL" -> "请粘贴 Kotlin DSL 代码"
                         "Paste JSON" -> "请粘贴 JSON"
+                        "Paste A2UI" -> "请粘贴 A2UI JSONL"
                         else -> "请输入 Prompt"
                     }
                     return@Button
                 }
                 isLoading = true
                 errorMessage = null
+                viewModel.clear() // Clear old stats
 
                 // ── Paste JSON: local render, no backend ──
                 if (selectedModel == "Paste JSON") {
@@ -376,6 +492,26 @@ fun GeneratorScreen(
                             onJsonRender()
                         } catch (e: Exception) {
                             errorMessage = "JSON 解析失败: ${e.message}"
+                            isLoading = false
+                        }
+                    }
+                    return@Button
+                }
+
+                // ── Paste A2UI: local A2UI render, no backend ──
+                if (selectedModel == "Paste A2UI") {
+                    isLoading = true
+                    errorMessage = null
+                    coroutineScope.launch {
+                        try {
+                            val normalizedJsonl = normalizeA2uiInput(prompt.trim())
+                            viewModel.setA2uiData(normalizedJsonl)
+                            android.util.Log.d("Generator", "Paste A2UI normalized JSONL:\n${normalizedJsonl.take(500)}")
+                            statusMessage = "A2UI JSONL 已加载，准备渲染..."
+                            isLoading = false
+                            onA2uiRender()
+                        } catch (e: Exception) {
+                            errorMessage = "A2UI JSONL 加载失败: ${e.message}"
                             isLoading = false
                         }
                     }
@@ -403,7 +539,8 @@ fun GeneratorScreen(
                             }
 
                             // 2. 将装配了 AppFunctions 状态的 Prompt 传递给大模型
-                            val jsonResponse = callGeminiJsonApi(enrichedPrompt)
+                            val aiResult = callGeminiJsonApi(enrichedPrompt)
+                            val jsonResponse = aiResult.content
                             android.util.Log.d("Generator", "Gemini JSON response: $jsonResponse")
                             withContext(Dispatchers.Main) {
                                 statusMessage = "正在解析 JSON..."
@@ -413,7 +550,7 @@ fun GeneratorScreen(
                             val kotlinDsl = convertJsonToKotlinDsl(cleaned)
                             withContext(Dispatchers.Main) {
                                 viewModel.jsonUiDocument = doc
-                                viewModel.setJsonDslData(cleaned, kotlinDsl)
+                                viewModel.setJsonDslData(cleaned, kotlinDsl, aiResult.tokenUsage, aiResult.speed)
                                 android.util.Log.d("Generator", "Converted Kotlin DSL:\n$kotlinDsl")
                                 statusMessage = "转换后的 Kotlin DSL:\n${kotlinDsl.take(500)}${if (kotlinDsl.length > 500) "\n..." else ""}"
                                 isLoading = false
@@ -423,6 +560,51 @@ fun GeneratorScreen(
                             val detail = e.message ?: e.javaClass.simpleName
                             withContext(Dispatchers.Main) {
                                 errorMessage = "Gemini JSON 生成失败: $detail"
+                                statusMessage = null
+                                isLoading = false
+                            }
+                        }
+                    }
+                    return@Button
+                }
+
+                // ── Gemini A2UI: generate A2UI JSONL via Gemini, render natively ──
+                if (selectedModel == "Gemini A2UI") {
+                    isLoading = true
+                    errorMessage = null
+                    coroutineScope.launch(Dispatchers.IO) {
+                        try {
+                            val contextJson = AppFunctionManager.getDeviceContext(context).toString()
+                            val enrichedPrompt = """
+                                <DeviceContext>
+                                $contextJson
+                                </DeviceContext>
+                                
+                                User Request: $prompt
+                            """.trimIndent()
+                            withContext(Dispatchers.Main) {
+                                statusMessage = "正在调用 Gemini A2UI 生成原生 UI..."
+                                android.util.Log.d("Generator", "A2UI Enriched Prompt:\n$enrichedPrompt")
+                            }
+
+                            val aiResult = callGeminiA2uiApi(enrichedPrompt)
+                            val jsonResponse = aiResult.content
+                            android.util.Log.d("Generator", "Gemini A2UI response: $jsonResponse")
+
+                            // Clean and normalize (auto-wrap raw component arrays)
+                            val normalized = normalizeA2uiInput(jsonResponse)
+                            android.util.Log.d("Generator", "A2UI Normalized JSONL:\n$normalized")
+
+                            withContext(Dispatchers.Main) {
+                                viewModel.setA2uiData(normalized, aiResult.tokenUsage, aiResult.speed)
+                                statusMessage = "A2UI JSONL 生成成功"
+                                isLoading = false
+                                onA2uiRender()
+                            }
+                        } catch (e: Exception) {
+                            val detail = e.message ?: e.javaClass.simpleName
+                            withContext(Dispatchers.Main) {
+                                errorMessage = "Gemini A2UI 生成失败: $detail"
                                 statusMessage = null
                                 isLoading = false
                             }
@@ -452,7 +634,8 @@ fun GeneratorScreen(
                             }
 
                             // 2. 将装配了 AppFunctions 状态的 Prompt 传递给大模型
-                            val jsonResponse = callGlmJsonApi(enrichedPrompt)
+                            val aiResult = callGlmJsonApi(enrichedPrompt)
+                            val jsonResponse = aiResult.content
                             android.util.Log.d("Generator", "GLM JSON response: $jsonResponse")
                             withContext(Dispatchers.Main) {
                                 statusMessage = "正在解析 JSON..."
@@ -462,7 +645,7 @@ fun GeneratorScreen(
                             val kotlinDsl = convertJsonToKotlinDsl(cleaned)
                             withContext(Dispatchers.Main) {
                                 viewModel.jsonUiDocument = doc
-                                viewModel.setJsonDslData(cleaned, kotlinDsl)
+                                viewModel.setJsonDslData(cleaned, kotlinDsl, aiResult.tokenUsage, aiResult.speed)
                                 android.util.Log.d("Generator", "Converted Kotlin DSL:\n$kotlinDsl")
                                 statusMessage = "转换后的 Kotlin DSL:\n${kotlinDsl.take(500)}${if (kotlinDsl.length > 500) "\n..." else ""}"
                                 isLoading = false
@@ -480,9 +663,56 @@ fun GeneratorScreen(
                     return@Button
                 }
 
+                // ── GLM A2UI: generate A2UI JSONL via GLM, render natively ──
+                if (selectedModel == "GLM A2UI") {
+                    isLoading = true
+                    errorMessage = null
+                    coroutineScope.launch(Dispatchers.IO) {
+                        try {
+                            val contextJson = AppFunctionManager.getDeviceContext(context).toString()
+                            val enrichedPrompt = """
+                                <DeviceContext>
+                                $contextJson
+                                </DeviceContext>
+                                
+                                User Request: $prompt
+                            """.trimIndent()
+                            withContext(Dispatchers.Main) {
+                                statusMessage = "正在调用 GLM A2UI 生成原生 UI..."
+                                android.util.Log.d("Generator", "A2UI Enriched Prompt:\n$enrichedPrompt")
+                            }
+
+                            val aiResult = callGlmA2uiApi(enrichedPrompt)
+                            val jsonResponse = aiResult.content
+                            android.util.Log.d("Generator", "GLM A2UI response: $jsonResponse")
+
+                            // Clean and normalize (auto-wrap raw component arrays)
+                            val normalized = normalizeA2uiInput(jsonResponse)
+                            android.util.Log.d("Generator", "A2UI Normalized JSONL:\n$normalized")
+
+                            withContext(Dispatchers.Main) {
+                                viewModel.setA2uiData(normalized, aiResult.tokenUsage, aiResult.speed)
+                                statusMessage = "A2UI JSONL 生成成功"
+                                isLoading = false
+                                onA2uiRender()
+                            }
+                        } catch (e: Exception) {
+                            val detail = e.message ?: e.javaClass.simpleName
+                            withContext(Dispatchers.Main) {
+                                errorMessage = "GLM A2UI 生成失败: $detail"
+                                statusMessage = null
+                                isLoading = false
+                            }
+                        }
+                    }
+                    return@Button
+                }
+
                 // ── AI / Paste DSL: remote compilation ──
                 coroutineScope.launch(Dispatchers.IO) {
                     try {
+                        var tokens: String? = null
+                        var speed: String? = null
                         val cleanedJson = if (selectedModel == "Paste DSL") {
                             withContext(Dispatchers.Main) {
                                 statusMessage = "正在解析 DSL..."
@@ -502,11 +732,14 @@ fun GeneratorScreen(
                                 statusMessage = "正在采集本地 AppFunctions 状态并调用 $selectedModel API..."
                             }
                             // 1. Call selected AI API with enriched prompt
-                            val jsonResponse = if (selectedModel == "Gemini") {
+                            val aiResult = if (selectedModel == "Gemini") {
                                 callGeminiApi(enrichedPrompt)
                             } else {
                                 callGlmApi(enrichedPrompt)
                             }
+                            val jsonResponse = aiResult.content
+                            tokens = aiResult.tokenUsage
+                            speed = aiResult.speed
                             withContext(Dispatchers.Main) {
                                 android.util.Log.d("Generator", "AI response: $jsonResponse")
                                 statusMessage = "$selectedModel 响应:\n${jsonResponse.take(200)}..."
@@ -531,7 +764,7 @@ fun GeneratorScreen(
 
                         // 4. Store in ViewModel and navigate
                         withContext(Dispatchers.Main) {
-                            viewModel.setGeneratedData(rcBytes, cleanedJson)
+                            viewModel.setGeneratedData(rcBytes, cleanedJson, tokens, speed)
                             isLoading = false
                             onGenerationSuccess()
                         }
@@ -634,23 +867,38 @@ fun GeneratorScreen(
     }
 }
 
+data class AiResult(
+    val content: String,
+    val tokenUsage: String? = null,
+    val speed: String? = null
+)
+
 /**
  * Call the Gemini API with the user's prompt and system instruction.
  */
-private suspend fun callGeminiApi(prompt: String): String = withContext(Dispatchers.IO) {
+private suspend fun callGeminiApi(prompt: String): AiResult = withContext(Dispatchers.IO) {
     try {
         val apiKey = getGeminiApiKey()
+        val startTime = System.currentTimeMillis()
 
         val model = GenerativeModel(
-            modelName = "gemini-3.5-flash",
+            modelName = "gemini-1.5-flash",
             apiKey = apiKey,
             systemInstruction = content { text(REMOTE_COMPOSE_SYSTEM_PROMPT) }
         )
 
         val response = model.generateContent(prompt)
+        val endTime = System.currentTimeMillis()
         val result = response.text ?: throw IllegalStateException("Empty response from Gemini")
+        
+        val usage = response.usageMetadata
+        val tokens = usage?.let { "${it.totalTokenCount} tokens" }
+        val duration = (endTime - startTime) / 1000.0
+        val speed = if (duration > 0 && usage != null) {
+            String.format("%.1f tokens/s", usage.candidatesTokenCount / duration)
+        } else null
 
-        result
+        AiResult(result, tokens, speed)
     } catch (e: Exception) {
         throw Exception("Gemini API 调用失败: ${e.message}", e)
     }
@@ -658,7 +906,7 @@ private suspend fun callGeminiApi(prompt: String): String = withContext(Dispatch
 
 /**
  * Call the Gemini API with the SDUI JSON system prompt.
- * Uses gemini-2.5-flash to generate JSON UI documents.
+ * Uses gemini-1.5-flash to generate JSON UI documents.
  */
 /**
  * Builds the full system prompt for JSON-based SDUI generation by combining
@@ -669,25 +917,74 @@ private fun buildJsonSystemPrompt(): String {
 }
 
 /**
- * Call the Gemini API with the SDUI JSON system prompt.
- * Dynamically injects available AppFunctions into the system prompt
- * so the model knows what local tools it can bind to interactive elements.
+ * Builds the full system prompt for A2UI generation.
  */
-private suspend fun callGeminiJsonApi(prompt: String): String = withContext(Dispatchers.IO) {
+private fun buildA2uiSystemPrompt(): String {
+    return A2UI_JSON_SYSTEM_PROMPT + "\n\n" + AppFunctionManager.buildPromptSection()
+}
+
+/**
+ * Call the Gemini API with the A2UI system prompt.
+ * Uses gemini-1.5-flash to generate A2UI JSONL messages.
+ */
+private suspend fun callGeminiA2uiApi(prompt: String): AiResult = withContext(Dispatchers.IO) {
     try {
         val apiKey = getGeminiApiKey()
-        val fullSystemPrompt = buildJsonSystemPrompt()
+        val fullSystemPrompt = buildA2uiSystemPrompt()
+        val startTime = System.currentTimeMillis()
 
         val model = GenerativeModel(
-            modelName = "gemini-2.5-flash",
+            modelName = "gemini-1.5-flash",
             apiKey = apiKey,
             systemInstruction = content { text(fullSystemPrompt) }
         )
 
         val response = model.generateContent(prompt)
+        val endTime = System.currentTimeMillis()
         val result = response.text ?: throw IllegalStateException("Empty response from Gemini")
 
-        result
+        val usage = response.usageMetadata
+        val tokens = usage?.let { "${it.totalTokenCount} tokens" }
+        val duration = (endTime - startTime) / 1000.0
+        val speed = if (duration > 0 && usage != null) {
+            String.format("%.1f tokens/s", usage.candidatesTokenCount / duration)
+        } else null
+
+        AiResult(result, tokens, speed)
+    } catch (e: Exception) {
+        throw Exception("Gemini A2UI API 调用失败: ${e.message}", e)
+    }
+}
+
+/**
+ * Call the Gemini API with the SDUI JSON system prompt.
+ * Dynamically injects available AppFunctions into the system prompt
+ * so the model knows what local tools it can bind to interactive elements.
+ */
+private suspend fun callGeminiJsonApi(prompt: String): AiResult = withContext(Dispatchers.IO) {
+    try {
+        val apiKey = getGeminiApiKey()
+        val fullSystemPrompt = buildJsonSystemPrompt()
+        val startTime = System.currentTimeMillis()
+
+        val model = GenerativeModel(
+            modelName = "gemini-1.5-flash",
+            apiKey = apiKey,
+            systemInstruction = content { text(fullSystemPrompt) }
+        )
+
+        val response = model.generateContent(prompt)
+        val endTime = System.currentTimeMillis()
+        val result = response.text ?: throw IllegalStateException("Empty response from Gemini")
+
+        val usage = response.usageMetadata
+        val tokens = usage?.let { "${it.totalTokenCount} tokens" }
+        val duration = (endTime - startTime) / 1000.0
+        val speed = if (duration > 0 && usage != null) {
+            String.format("%.1f tokens/s", usage.candidatesTokenCount / duration)
+        } else null
+
+        AiResult(result, tokens, speed)
     } catch (e: Exception) {
         throw Exception("Gemini JSON API 调用失败: ${e.message}", e)
     }
@@ -697,7 +994,7 @@ private suspend fun callGeminiJsonApi(prompt: String): String = withContext(Disp
  * Call the GLM 5.1 API (Zhipu AI) with the user's prompt.
  * Uses OpenAI-compatible REST API via OkHttp.
  */
-private suspend fun callGlmApi(prompt: String): String = withContext(Dispatchers.IO) {
+private suspend fun callGlmApi(prompt: String): AiResult = withContext(Dispatchers.IO) {
     try {
         val apiKey = "0a5cd5342cd24f2f8e4e44af433be613.AOsuKOY2hIaOKgVT"
         val client = OkHttp3Client.Builder()
@@ -706,6 +1003,7 @@ private suspend fun callGlmApi(prompt: String): String = withContext(Dispatchers
             .writeTimeout(30, java.util.concurrent.TimeUnit.SECONDS)
             .build()
 
+        val startTime = System.currentTimeMillis()
         // Build request JSON
         val requestJson = JSONObject().apply {
             put("model", "glm-4-flash")
@@ -736,6 +1034,7 @@ private suspend fun callGlmApi(prompt: String): String = withContext(Dispatchers
             .build()
 
         val response = client.newCall(request).execute()
+        val endTime = System.currentTimeMillis()
         val responseBody = response.body?.string()
             ?: throw IllegalStateException("Empty response body from GLM")
 
@@ -753,8 +1052,16 @@ private suspend fun callGlmApi(prompt: String): String = withContext(Dispatchers
         }
         val message = choices.getJSONObject(0).getJSONObject("message")
         val content = message.getString("content")
+        
+        val usage = json.optJSONObject("usage")
+        val tokens = usage?.let { "${it.optInt("total_tokens")} tokens" }
+        val completionTokens = usage?.optInt("completion_tokens") ?: 0
+        val duration = (endTime - startTime) / 1000.0
+        val speed = if (duration > 0 && completionTokens > 0) {
+            String.format("%.1f tokens/s", completionTokens / duration)
+        } else null
 
-        content
+        AiResult(content, tokens, speed)
     } catch (e: Exception) {
         throw Exception("GLM API 调用失败: ${e.message}", e)
     }
@@ -764,7 +1071,7 @@ private suspend fun callGlmApi(prompt: String): String = withContext(Dispatchers
  * Call the GLM 5.1 API with the SDUI JSON system prompt.
  * Same API key and endpoint as callGlmApi, but uses SDUI_JSON_SYSTEM_PROMPT.
  */
-private suspend fun callGlmJsonApi(prompt: String): String = withContext(Dispatchers.IO) {
+private suspend fun callGlmJsonApi(prompt: String): AiResult = withContext(Dispatchers.IO) {
     try {
         val apiKey = "0a5cd5342cd24f2f8e4e44af433be613.AOsuKOY2hIaOKgVT"
         val client = OkHttp3Client.Builder()
@@ -773,6 +1080,7 @@ private suspend fun callGlmJsonApi(prompt: String): String = withContext(Dispatc
             .writeTimeout(30, java.util.concurrent.TimeUnit.SECONDS)
             .build()
 
+        val startTime = System.currentTimeMillis()
         val requestJson = JSONObject().apply {
             put("model", "glm-4-flash")
             put("messages", org.json.JSONArray().apply {
@@ -800,6 +1108,7 @@ private suspend fun callGlmJsonApi(prompt: String): String = withContext(Dispatc
             .build()
 
         val response = client.newCall(request).execute()
+        val endTime = System.currentTimeMillis()
         val responseBody = response.body?.string()
             ?: throw IllegalStateException("Empty response body from GLM")
 
@@ -815,9 +1124,91 @@ private suspend fun callGlmJsonApi(prompt: String): String = withContext(Dispatc
             throw IllegalStateException("No choices in GLM response")
         }
         val message = choices.getJSONObject(0).getJSONObject("message")
-        message.getString("content")
+        val content = message.getString("content")
+
+        val usage = json.optJSONObject("usage")
+        val tokens = usage?.let { "${it.optInt("total_tokens")} tokens" }
+        val completionTokens = usage?.optInt("completion_tokens") ?: 0
+        val duration = (endTime - startTime) / 1000.0
+        val speed = if (duration > 0 && completionTokens > 0) {
+            String.format("%.1f tokens/s", completionTokens / duration)
+        } else null
+
+        AiResult(content, tokens, speed)
     } catch (e: Exception) {
         throw Exception("GLM JSON API 调用失败: ${e.message}", e)
+    }
+}
+
+/**
+ * Call the GLM API with the A2UI system prompt.
+ */
+private suspend fun callGlmA2uiApi(prompt: String): AiResult = withContext(Dispatchers.IO) {
+    try {
+        val apiKey = "0a5cd5342cd24f2f8e4e44af433be613.AOsuKOY2hIaOKgVT"
+        val client = OkHttp3Client.Builder()
+            .connectTimeout(30, java.util.concurrent.TimeUnit.SECONDS)
+            .readTimeout(120, java.util.concurrent.TimeUnit.SECONDS)
+            .writeTimeout(30, java.util.concurrent.TimeUnit.SECONDS)
+            .build()
+
+        val startTime = System.currentTimeMillis()
+        val requestJson = JSONObject().apply {
+            put("model", "glm-4-flash")
+            put("messages", org.json.JSONArray().apply {
+                put(JSONObject().apply {
+                    put("role", "system")
+                    put("content", buildA2uiSystemPrompt())
+                })
+                put(JSONObject().apply {
+                    put("role", "user")
+                    put("content", prompt)
+                })
+            })
+            put("max_tokens", 4096)
+            put("temperature", 0.7)
+        }
+
+        val body = requestJson.toString()
+            .toRequestBody("application/json; charset=utf-8".toMediaType())
+
+        val request = OkHttp3Request.Builder()
+            .url("https://open.bigmodel.cn/api/paas/v4/chat/completions")
+            .addHeader("Authorization", "Bearer $apiKey")
+            .addHeader("Content-Type", "application/json")
+            .post(body)
+            .build()
+
+        val response = client.newCall(request).execute()
+        val endTime = System.currentTimeMillis()
+        val responseBody = response.body?.string()
+            ?: throw IllegalStateException("Empty response body from GLM")
+
+        if (!response.isSuccessful) {
+            throw IllegalStateException(
+                "GLM API error ${response.code}: ${responseBody.take(300)}"
+            )
+        }
+
+        val json = JSONObject(responseBody)
+        val choices = json.getJSONArray("choices")
+        if (choices.length() == 0) {
+            throw IllegalStateException("No choices in GLM response")
+        }
+        val message = choices.getJSONObject(0).getJSONObject("message")
+        val content = message.getString("content")
+
+        val usage = json.optJSONObject("usage")
+        val tokens = usage?.let { "${it.optInt("total_tokens")} tokens" }
+        val completionTokens = usage?.optInt("completion_tokens") ?: 0
+        val duration = (endTime - startTime) / 1000.0
+        val speed = if (duration > 0 && completionTokens > 0) {
+            String.format("%.1f tokens/s", completionTokens / duration)
+        } else null
+
+        AiResult(content, tokens, speed)
+    } catch (e: Exception) {
+        throw Exception("GLM A2UI API 调用失败: ${e.message}", e)
     }
 }
 
@@ -852,6 +1243,30 @@ private fun cleanJsonResponse(response: String): String {
         cleaned = cleaned.removePrefix("```json").removeSuffix("```").trim()
     } else if (cleaned.startsWith("```")) {
         cleaned = cleaned.removePrefix("```").removeSuffix("```").trim()
+    }
+
+    return cleaned
+}
+
+/**
+ * Normalizes A2UI input.
+ * If the input is a raw JSON array of components, wraps it in the necessary
+ * createSurface and updateComponents message envelope.
+ */
+private fun normalizeA2uiInput(input: String): String {
+    val cleaned = cleanJsonResponse(input).trim()
+    
+    // If it's already A2UI JSONL (starts with {), just return cleaned
+    if (cleaned.startsWith("{")) {
+        return cleaned
+    }
+    
+    // If it's a raw component array (starts with [), wrap it
+    if (cleaned.startsWith("[")) {
+        val createSurface = """{"version":"v0.10-draft","createSurface":{"surfaceId":"main","catalogId":"basic","theme":{"primaryColor":"#6750A4"}}}"""
+        val updateComponents = """{"version":"v0.10-draft","updateComponents":{"surfaceId":"main","components":$cleaned}}"""
+        val updateDataModel = """{"version":"v0.10-draft","updateDataModel":{"surfaceId":"main","path":"/","value":{}}}"""
+        return "$createSurface\n$updateComponents\n$updateDataModel"
     }
 
     return cleaned

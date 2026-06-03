@@ -24,4 +24,6 @@ dependencyResolutionManagement {
 
 rootProject.name = "CMW-simulator"
 include(":app")
+include(":a2ui-compose")
+project(":a2ui-compose").projectDir = file("a2ui-compose/a2ui-compose")
  

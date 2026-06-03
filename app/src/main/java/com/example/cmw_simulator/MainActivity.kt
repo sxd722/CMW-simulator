@@ -55,6 +55,9 @@ import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
+import com.a2ui.compose.A2UIConfig
+import com.a2ui.compose.A2UIRenderer
+import com.a2ui.compose.rememberA2UIRenderer
 import kotlinx.coroutines.withContext
 import java.text.SimpleDateFormat
 import java.util.Date
@@ -89,8 +92,52 @@ fun AppNavigation(sharedViewModel: SharedRcViewModel = viewModel()) {
                 },
                 onJsonRender = {
                     navController.navigate("json_renderer")
+                },
+                onA2uiRender = {
+                    navController.navigate("a2ui_renderer")
                 }
             )
+        }
+        composable("a2ui_renderer") {
+            val a2uiJsonl = sharedViewModel.a2uiJsonl
+            Column(modifier = Modifier.fillMaxSize()) {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(16.dp),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(
+                        text = "A2UI 原生 UI 预览",
+                        style = MaterialTheme.typography.headlineMedium,
+                        fontWeight = FontWeight.Bold,
+                        color = MaterialTheme.colorScheme.primary
+                    )
+                    Button(
+                        onClick = { navController.popBackStack() },
+                        colors = ButtonDefaults.buttonColors(
+                            containerColor = MaterialTheme.colorScheme.secondaryContainer,
+                            contentColor = MaterialTheme.colorScheme.onSecondaryContainer
+                        )
+                    ) {
+                        Text("← 返回", fontSize = 12.sp)
+                    }
+                }
+                if (a2uiJsonl != null) {
+                    A2uiPreviewHost(
+                        jsonl = a2uiJsonl,
+                        modifier = Modifier.weight(1f)
+                    )
+                } else {
+                    Box(
+                        modifier = Modifier.fillMaxSize(),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Text("No A2UI document loaded", color = Color.Gray)
+                    }
+                }
+            }
         }
         composable("tester") {
             RemoteComposeTesterScreen(
@@ -425,6 +472,63 @@ fun RemoteComposeTesterScreen(
             }
         }
     }
+}
+
+/**
+ * Host composable that renders A2UI JSONL content using the a2ui-compose library.
+ * Intercepts appfn: event names and routes them to AppFunctionManager.
+ */
+@Composable
+fun A2uiPreviewHost(jsonl: String, modifier: Modifier = Modifier) {
+    val context = LocalContext.current
+
+    val renderer = rememberA2UIRenderer(
+        config = A2UIConfig(
+            onAction = { actionMessage ->
+                val eventName = actionMessage.action.name
+                if (eventName.startsWith("appfn:")) {
+                    AppFunctionManager.executeFunction(context, eventName)
+                } else {
+                    android.widget.Toast.makeText(
+                        context,
+                        "Action: $eventName",
+                        android.widget.Toast.LENGTH_SHORT
+                    ).show()
+                }
+            },
+            onOpenUrl = { url ->
+                if (url.startsWith("appfn:")) {
+                    AppFunctionManager.executeFunction(context, url)
+                } else {
+                    try {
+                        val intent = android.content.Intent(
+                            android.content.Intent.ACTION_VIEW,
+                            android.net.Uri.parse(url)
+                        ).apply { addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK) }
+                        context.startActivity(intent)
+                    } catch (e: Exception) {
+                        android.widget.Toast.makeText(
+                            context,
+                            "无法打开链接: ${e.message}",
+                            android.widget.Toast.LENGTH_SHORT
+                        ).show()
+                    }
+                }
+            }
+        )
+    )
+
+    LaunchedEffect(jsonl) {
+        renderer.clear()
+        renderer.processJsonLines(jsonl)
+    }
+
+    A2UIRenderer(
+        renderer,
+        modifier = modifier
+            .fillMaxWidth()
+            .padding(horizontal = 16.dp)
+    )
 }
 
 /**

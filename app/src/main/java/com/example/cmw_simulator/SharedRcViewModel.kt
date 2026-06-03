@@ -17,14 +17,32 @@ class SharedRcViewModel : ViewModel() {
     // JSON UI document for direct rendering
     var jsonUiDocument by mutableStateOf<JsonUiDocument?>(null)
 
-    fun setGeneratedData(bytes: ByteArray, json: String) {
+    // A2UI JSONL content for native rendering
+    var a2uiJsonl by mutableStateOf<String?>(null)
+
+    // Generation stats
+    var tokenUsage by mutableStateOf<String?>(null)
+    var generationSpeed by mutableStateOf<String?>(null)
+
+    fun setGeneratedData(bytes: ByteArray, json: String, tokens: String? = null, speed: String? = null) {
         generatedRcBytes = bytes
         generatedJson = json
+        tokenUsage = tokens
+        generationSpeed = speed
     }
 
-    fun setJsonDslData(json: String, kotlinDsl: String) {
+    fun setJsonDslData(json: String, kotlinDsl: String, tokens: String? = null, speed: String? = null) {
         generatedJson = json
         generatedKotlinDsl = kotlinDsl
+        tokenUsage = tokens
+        generationSpeed = speed
+    }
+
+    fun setA2uiData(jsonl: String, tokens: String? = null, speed: String? = null) {
+        a2uiJsonl = jsonl
+        generatedJson = jsonl
+        tokenUsage = tokens
+        generationSpeed = speed
     }
 
     fun clear() {
@@ -32,5 +50,8 @@ class SharedRcViewModel : ViewModel() {
         generatedJson = null
         jsonUiDocument = null
         generatedKotlinDsl = null
+        a2uiJsonl = null
+        tokenUsage = null
+        generationSpeed = null
     }
 }

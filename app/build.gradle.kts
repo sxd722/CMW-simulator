@@ -97,6 +97,9 @@ dependencies {
     // OkHttp (for GLM API calls)
     implementation(libs.okhttp)
 
+    // A2UI Compose renderer
+    implementation(project(":a2ui-compose"))
+
 
 
     // Testing
