@@ -97,6 +97,9 @@ dependencies {
     // OkHttp (for GLM API calls)
     implementation(libs.okhttp)
 
+    // Material Icons Extended
+    implementation(libs.compose.material.icons)
+
     // A2UI Compose renderer
     implementation(project(":a2ui-compose"))
 

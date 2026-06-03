@@ -20,6 +20,10 @@ class SharedRcViewModel : ViewModel() {
     // A2UI JSONL content for native rendering
     var a2uiJsonl by mutableStateOf<String?>(null)
 
+    // CMW custom JSON payload for hardware-accelerated rendering
+    var cmwJsonPayload by mutableStateOf<String?>(null)
+        private set
+
     // Generation stats
     var tokenUsage by mutableStateOf<String?>(null)
     var generationSpeed by mutableStateOf<String?>(null)
@@ -45,12 +49,20 @@ class SharedRcViewModel : ViewModel() {
         generationSpeed = speed
     }
 
+    fun setCmwData(json: String, tokens: String? = null, speed: String? = null) {
+        cmwJsonPayload = json
+        generatedJson = json
+        tokenUsage = tokens
+        generationSpeed = speed
+    }
+
     fun clear() {
         generatedRcBytes = null
         generatedJson = null
         jsonUiDocument = null
         generatedKotlinDsl = null
         a2uiJsonl = null
+        cmwJsonPayload = null
         tokenUsage = null
         generationSpeed = null
     }

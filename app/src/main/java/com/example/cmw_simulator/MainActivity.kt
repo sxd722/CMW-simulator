@@ -95,8 +95,46 @@ fun AppNavigation(sharedViewModel: SharedRcViewModel = viewModel()) {
                 },
                 onA2uiRender = {
                     navController.navigate("a2ui_renderer")
+                },
+                onPredefinedRender = { type ->
+                    if (type == "LiquidGlass") {
+                        navController.navigate("liquid_glass")
+                    }
+                },
+                onCmwRender = {
+                    navController.navigate("cmw_renderer")
                 }
             )
+        }
+        composable("liquid_glass") {
+            Column(modifier = Modifier.fillMaxSize()) {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(16.dp),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(
+                        text = "Liquid Glass UI 预览",
+                        style = MaterialTheme.typography.headlineMedium,
+                        fontWeight = FontWeight.Bold,
+                        color = MaterialTheme.colorScheme.primary
+                    )
+                    Button(
+                        onClick = { navController.popBackStack() },
+                        colors = ButtonDefaults.buttonColors(
+                            containerColor = MaterialTheme.colorScheme.secondaryContainer,
+                            contentColor = MaterialTheme.colorScheme.onSecondaryContainer
+                        )
+                    ) {
+                        Text("← 返回", fontSize = 12.sp)
+                    }
+                }
+                Box(modifier = Modifier.weight(1f)) {
+                    LiquidGlassMusicPlayer()
+                }
+            }
         }
         composable("a2ui_renderer") {
             val a2uiJsonl = sharedViewModel.a2uiJsonl
@@ -188,6 +226,61 @@ fun AppNavigation(sharedViewModel: SharedRcViewModel = viewModel()) {
                     contentAlignment = Alignment.Center
                 ) {
                     Text("No JSON document loaded", color = Color.Gray)
+                }
+            }
+        }
+        composable("cmw_renderer") {
+            val cmwPayload = sharedViewModel.cmwJsonPayload
+            Column(modifier = Modifier.fillMaxSize()) {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(16.dp),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(
+                        text = "CMW 自定义 UI 预览",
+                        style = MaterialTheme.typography.headlineMedium,
+                        fontWeight = FontWeight.Bold,
+                        color = MaterialTheme.colorScheme.primary
+                    )
+                    Button(
+                        onClick = { navController.popBackStack() },
+                        colors = ButtonDefaults.buttonColors(
+                            containerColor = MaterialTheme.colorScheme.secondaryContainer,
+                            contentColor = MaterialTheme.colorScheme.onSecondaryContainer
+                        )
+                    ) {
+                        Text("← 返回", fontSize = 12.sp)
+                    }
+                }
+                if (cmwPayload != null) {
+                    val cmwJson = remember(cmwPayload) {
+                        runCatching { org.json.JSONObject(cmwPayload) }.getOrNull()
+                    }
+                    Box(
+                        modifier = Modifier
+                            .weight(1f)
+                            .fillMaxWidth()
+                    ) {
+                        if (cmwJson != null) {
+                            CMWWidgetHost(cmwJson)
+                        } else {
+                            Text(
+                                text = "JSON 解析错误",
+                                color = MaterialTheme.colorScheme.error,
+                                modifier = Modifier.padding(16.dp)
+                            )
+                        }
+                    }
+                } else {
+                    Box(
+                        modifier = Modifier.fillMaxSize(),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Text("No CMW document loaded", color = Color.Gray)
+                    }
                 }
             }
         }

@@ -274,6 +274,76 @@ The renderer will intercept event names matching "appfn:xxx" patterns as local d
 5. Bind interactive values to the data model using {"path":"/key"}.
 """.trimIndent()
 
+val CMW_JSON_SYSTEM_PROMPT = """
+You are an expert Server-Driven UI (SDUI) designer specializing in GPU-accelerated visual effects for Android.
+Your task is to generate JSON that combines standard layout nodes with custom hardware-accelerated CMW nodes.
+
+You must output ONLY valid, raw JSON. Do not include introductory text, explanations, or markdown code block formatting (do NOT use ```json).
+
+# Allowed Node Types
+
+## Standard Layout Nodes
+1. "Text" — Display text.
+   { "type": "Text", "text": "Hello", "color": "#FFFFFF", "fontSize": 24, "fontWeight": "Bold" }
+
+2. "Spacer" — Vertical spacer.
+   { "type": "Spacer", "height": 16 }
+
+3. "Box" — Stack children on top of each other.
+   { "type": "Box", "contentAlignment": "Center", "modifier": { ... }, "children": [...] }
+
+4. "Column" — Vertical layout.
+   { "type": "Column", "verticalArrangement": 8, "horizontalAlignment": "CenterHorizontally", "modifier": { ... }, "children": [...] }
+
+5. "Row" — Horizontal layout.
+   { "type": "Row", "horizontalArrangement": 8, "verticalAlignment": "CenterVertically", "modifier": { ... }, "children": [...] }
+
+## Custom CMW Hardware-Accelerated Nodes
+
+6. "LiquidGlassBackground" — Creates a continuous gooey mesh of animated colors.
+   { "type": "LiquidGlassBackground", "colors": ["#6366F1", "#22D3EE", "#D946EF"] }
+   - Uses Android RenderEffect (GPU-accelerated ColorMatrix + Blur) for liquid/gooey blending.
+   - Place as the first child of a Box to create an animated background.
+
+7. "GlassContainer" — A container that applies hardware blur and frosted glass lighting.
+   { "type": "GlassContainer", "blurRadius": 30, "cornerRadius": 24, "fillMaxWidth": true, "children": [...] }
+   - Renders as a semi-transparent box with blur, border, and rounded corners.
+
+8. "FloatingGlassOrb" — A decorative glass-like 3D sphere that floats continuously.
+   { "type": "FloatingGlassOrb", "baseColor": "#EC4899", "floatExpression": "sin(time * 2.0) * 20" }
+   - The floatExpression uses sin(time * speed) to drive GPU-accelerated vertical oscillation.
+   - Extract the speed multiplier from the expression.
+
+## Modifier Object (optional on any node)
+{ "modifier": { "fillMaxSize": true, "fillMaxWidth": true, "padding": 16, "background": "#1A1A2E", "cornerRadius": 12 } }
+
+# Design Guidelines
+1. The root node should typically be a Box with fillMaxSize and a dark background.
+2. Use LiquidGlassBackground as the first child for animated color mesh backgrounds.
+3. Overlay GlassContainer on top for frosted glass cards with content.
+4. Use FloatingGlassOrb as decorative elements.
+5. Keep designs visually stunning with bold color choices.
+6. Output raw JSON only — no explanations.
+
+# Example Output:
+{
+  "type": "Box",
+  "modifier": { "fillMaxSize": true, "background": "#0A0A14" },
+  "children": [
+    { "type": "LiquidGlassBackground", "colors": ["#6366F1", "#22D3EE", "#D946EF"] },
+    { "type": "Box", "modifier": { "fillMaxSize": true, "background": "#000000", "cornerRadius": 0 } },
+    { "type": "GlassContainer", "blurRadius": 30, "cornerRadius": 24, "fillMaxWidth": true, "children": [
+      { "type": "Column", "modifier": { "padding": 32 }, "children": [
+        { "type": "Text", "text": "Glass UI", "color": "#FFFFFF", "fontSize": 28, "fontWeight": "Bold" },
+        { "type": "Spacer", "height": 16 },
+        { "type": "Text", "text": "Hardware-accelerated effects", "color": "#BAE6FD", "fontSize": 14 }
+      ]}
+    ]},
+    { "type": "FloatingGlassOrb", "baseColor": "#EC4899", "floatExpression": "sin(time * 2.0) * 20" }
+  ]
+}
+""".trimIndent()
+
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun GeneratorScreen(
@@ -281,6 +351,8 @@ fun GeneratorScreen(
     onGenerationSuccess: () -> Unit,
     onJsonRender: () -> Unit = {},
     onA2uiRender: () -> Unit = {},
+    onPredefinedRender: (String) -> Unit = {},
+    onCmwRender: () -> Unit = {},
 ) {
     val coroutineScope = rememberCoroutineScope()
     val context = LocalContext.current
@@ -294,7 +366,8 @@ fun GeneratorScreen(
     val geminiModels = listOf("Gemini", "Gemini JSON", "Gemini A2UI")
     val glmModels = listOf("GLM 5.1", "GLM JSON", "GLM A2UI")
     val pasteModels = listOf("Paste DSL", "Paste JSON", "Paste A2UI")
-    val allModels = geminiModels + glmModels + pasteModels
+    val predefinedModels = listOf("Liquid Glass")
+    val cmwModels = listOf("Gemini CMW", "GLM CMW", "Paste CMW")
 
     Column(
         modifier = Modifier
@@ -319,6 +392,10 @@ fun GeneratorScreen(
             "GLM A2UI" -> "输入自然语言描述，GLM 将生成 A2UI 协议 JSONL 并渲染为原生 Android UI。"
             "Gemini JSON" -> "输入自然语言描述，Gemini 将生成 SDUI JSON 并在本地渲染。"
             "Gemini A2UI" -> "输入自然语言描述，Gemini 将生成 A2UI 协议 JSONL 并渲染为原生 Android UI。"
+            "Liquid Glass" -> "渲染一个预定义的、具有高性能图形效果的 Liquid Glass 音乐播放器 UI。"
+            "Gemini CMW" -> "输入自然语言描述，Gemini 将生成含 GPU 加速效果的自定义 JSON 并本地渲染。"
+            "GLM CMW" -> "输入自然语言描述，GLM 将生成含 GPU 加速效果的自定义 JSON 并本地渲染。"
+            "Paste CMW" -> "粘贴自定义 CMW JSON（含 LiquidGlassBackground / GlassContainer / FloatingGlassOrb 节点），直接渲染。"
             else -> "输入自然语言描述，AI 将生成 Remote Compose 文档并预览。"
         }
         Text(
@@ -335,6 +412,7 @@ fun GeneratorScreen(
         )
         
         // Row 1: Gemini
+        Text("Gemini 系列:", style = MaterialTheme.typography.labelSmall)
         Row(
             modifier = Modifier.fillMaxWidth(),
             horizontalArrangement = Arrangement.spacedBy(8.dp)
@@ -349,6 +427,7 @@ fun GeneratorScreen(
         }
         
         // Row 2: GLM
+        Text("GLM 系列:", style = MaterialTheme.typography.labelSmall)
         Row(
             modifier = Modifier.fillMaxWidth(),
             horizontalArrangement = Arrangement.spacedBy(8.dp)
@@ -363,6 +442,7 @@ fun GeneratorScreen(
         }
 
         // Row 3: Paste
+        Text("手动粘贴:", style = MaterialTheme.typography.labelSmall)
         Row(
             modifier = Modifier.fillMaxWidth(),
             horizontalArrangement = Arrangement.spacedBy(8.dp)
@@ -376,34 +456,70 @@ fun GeneratorScreen(
             }
         }
 
+        // Row 4: Predefined
+        Text("预定义 UI:", style = MaterialTheme.typography.labelSmall)
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            predefinedModels.forEach { model ->
+                FilterChip(
+                    selected = selectedModel == model,
+                    onClick = { selectedModel = model },
+                    label = { Text(model) }
+                )
+            }
+        }
+
+        // Row 5: CMW Custom JSON
+        Text("CMW 自定义 JSON (GPU 效果):", style = MaterialTheme.typography.labelSmall)
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            cmwModels.forEach { model ->
+                FilterChip(
+                    selected = selectedModel == model,
+                    onClick = { selectedModel = model },
+                    label = { Text(model) }
+                )
+            }
+        }
+
         // Prompt input
-        val isPasteMode = selectedModel == "Paste DSL" || selectedModel == "Paste JSON" || selectedModel == "Paste A2UI"
-        val labelText = when (selectedModel) {
-            "Paste DSL" -> "Kotlin DSL 代码"
-            "Paste JSON" -> "JSON UI"
-            "Paste A2UI" -> "A2UI JSONL"
-            else -> "描述你想要的 UI"
+        val isPasteMode = selectedModel == "Paste DSL" || selectedModel == "Paste JSON" || selectedModel == "Paste A2UI" || selectedModel == "Paste CMW"
+        val isPredefinedMode = selectedModel == "Liquid Glass"
+        
+        if (!isPredefinedMode) {
+            val labelText = when (selectedModel) {
+                "Paste DSL" -> "Kotlin DSL 代码"
+                "Paste JSON" -> "JSON UI"
+                "Paste A2UI" -> "A2UI JSONL"
+                "Paste CMW" -> "CMW JSON"
+                else -> "描述你想要的 UI"
+            }
+            val placeholderText = when (selectedModel) {
+                "Paste DSL" -> "粘贴 Kotlin DSL，例如：RemoteColumn { ... }"
+                "Paste JSON" -> "粘贴 JSON，例如：{ \"backgroundColor\": \"#FFF\", \"elements\": [...] }"
+                "Paste A2UI" -> "粘贴 A2UI JSONL，每行一个 JSON 消息..."
+                "Paste CMW" -> "粘贴 CMW JSON，例如：{ \"type\": \"Column\", \"children\": [...] }"
+                else -> "例如：帮我生成一个包含标题和点赞按钮的商品卡片"
+            }
+            OutlinedTextField(
+                value = prompt,
+                onValueChange = {
+                    prompt = it
+                    errorMessage = null
+                },
+                label = { Text(labelText) },
+                placeholder = { Text(placeholderText) },
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(if (isPasteMode) 220.dp else 120.dp),
+                maxLines = if (isPasteMode) 15 else 5,
+                isError = errorMessage != null
+            )
         }
-        val placeholderText = when (selectedModel) {
-            "Paste DSL" -> "粘贴 Kotlin DSL，例如：RemoteColumn { ... }"
-            "Paste JSON" -> "粘贴 JSON，例如：{ \"backgroundColor\": \"#FFF\", \"elements\": [...] }"
-            "Paste A2UI" -> "粘贴 A2UI JSONL，每行一个 JSON 消息..."
-            else -> "例如：帮我生成一个包含标题和点赞按钮的商品卡片"
-        }
-        OutlinedTextField(
-            value = prompt,
-            onValueChange = {
-                prompt = it
-                errorMessage = null
-            },
-            label = { Text(labelText) },
-            placeholder = { Text(placeholderText) },
-            modifier = Modifier
-                .fillMaxWidth()
-                .height(if (isPasteMode) 220.dp else 120.dp),
-            maxLines = if (isPasteMode) 15 else 5,
-            isError = errorMessage != null
-        )
 
         // Error message
         errorMessage?.let { msg ->
@@ -452,19 +568,24 @@ fun GeneratorScreen(
             "Paste DSL" -> "🚀 编译并渲染"
             "Paste JSON" -> "🚀 直接渲染"
             "Paste A2UI" -> "🚀 直接渲染"
+            "Liquid Glass" -> "✨ 渲染音乐播放器"
             "GLM JSON" -> "✨ 生成并渲染"
             "GLM A2UI" -> "✨ 生成并渲染"
+            "Gemini CMW" -> "✨ 生成并渲染"
+            "GLM CMW" -> "✨ 生成并渲染"
+            "Paste CMW" -> "🚀 直接渲染"
             "Gemini JSON" -> "✨ 生成并渲染"
             "Gemini A2UI" -> "✨ 生成并渲染"
             else -> "✨ 生成并预览"
         }
         Button(
             onClick = {
-                if (prompt.isBlank()) {
+                if (!isPredefinedMode && prompt.isBlank()) {
                     errorMessage = when (selectedModel) {
                         "Paste DSL" -> "请粘贴 Kotlin DSL 代码"
                         "Paste JSON" -> "请粘贴 JSON"
                         "Paste A2UI" -> "请粘贴 A2UI JSONL"
+                        "Paste CMW" -> "请粘贴 CMW JSON"
                         else -> "请输入 Prompt"
                     }
                     return@Button
@@ -472,6 +593,13 @@ fun GeneratorScreen(
                 isLoading = true
                 errorMessage = null
                 viewModel.clear() // Clear old stats
+
+                // ── Predefined: Liquid Glass ──
+                if (selectedModel == "Liquid Glass") {
+                    onPredefinedRender("LiquidGlass")
+                    isLoading = false
+                    return@Button
+                }
 
                 // ── Paste JSON: local render, no backend ──
                 if (selectedModel == "Paste JSON") {
@@ -512,6 +640,26 @@ fun GeneratorScreen(
                             onA2uiRender()
                         } catch (e: Exception) {
                             errorMessage = "A2UI JSONL 加载失败: ${e.message}"
+                            isLoading = false
+                        }
+                    }
+                    return@Button
+                }
+
+                // ── Paste CMW: local CMW custom JSON render, no backend ──
+                if (selectedModel == "Paste CMW") {
+                    isLoading = true
+                    errorMessage = null
+                    coroutineScope.launch {
+                        try {
+                            val cleaned = cleanJsonResponse(prompt.trim())
+                            viewModel.setCmwData(cleaned)
+                            android.util.Log.d("Generator", "Paste CMW JSON:\n${cleaned.take(500)}")
+                            statusMessage = "CMW JSON 已加载，准备渲染..."
+                            isLoading = false
+                            onCmwRender()
+                        } catch (e: Exception) {
+                            errorMessage = "CMW JSON 加载失败: ${e.message}"
                             isLoading = false
                         }
                     }
@@ -708,6 +856,88 @@ fun GeneratorScreen(
                     return@Button
                 }
 
+                // ── Gemini CMW: generate CMW custom JSON via Gemini, render locally ──
+                if (selectedModel == "Gemini CMW") {
+                    isLoading = true
+                    errorMessage = null
+                    coroutineScope.launch(Dispatchers.IO) {
+                        try {
+                            val contextJson = AppFunctionManager.getDeviceContext(context).toString()
+                            val enrichedPrompt = """
+                                <DeviceContext>
+                                $contextJson
+                                </DeviceContext>
+
+                                User Request: $prompt
+                            """.trimIndent()
+                            withContext(Dispatchers.Main) {
+                                statusMessage = "正在调用 Gemini CMW 生成自定义 UI..."
+                            }
+
+                            val aiResult = callGeminiCmwApi(enrichedPrompt)
+                            val jsonResponse = aiResult.content
+                            android.util.Log.d("Generator", "Gemini CMW response: $jsonResponse")
+
+                            val cleaned = cleanJsonResponse(jsonResponse)
+                            withContext(Dispatchers.Main) {
+                                viewModel.setCmwData(cleaned, aiResult.tokenUsage, aiResult.speed)
+                                statusMessage = "CMW JSON 生成成功"
+                                isLoading = false
+                                onCmwRender()
+                            }
+                        } catch (e: Exception) {
+                            val detail = e.message ?: e.javaClass.simpleName
+                            withContext(Dispatchers.Main) {
+                                errorMessage = "Gemini CMW 生成失败: $detail"
+                                statusMessage = null
+                                isLoading = false
+                            }
+                        }
+                    }
+                    return@Button
+                }
+
+                // ── GLM CMW: generate CMW custom JSON via GLM, render locally ──
+                if (selectedModel == "GLM CMW") {
+                    isLoading = true
+                    errorMessage = null
+                    coroutineScope.launch(Dispatchers.IO) {
+                        try {
+                            val contextJson = AppFunctionManager.getDeviceContext(context).toString()
+                            val enrichedPrompt = """
+                                <DeviceContext>
+                                $contextJson
+                                </DeviceContext>
+
+                                User Request: $prompt
+                            """.trimIndent()
+                            withContext(Dispatchers.Main) {
+                                statusMessage = "正在调用 GLM CMW 生成自定义 UI..."
+                            }
+
+                            val aiResult = callGlmCmwApi(enrichedPrompt)
+                            val jsonResponse = aiResult.content
+                            android.util.Log.d("Generator", "GLM CMW response: $jsonResponse")
+
+                            val cleaned = cleanJsonResponse(jsonResponse)
+                            withContext(Dispatchers.Main) {
+                                viewModel.setCmwData(cleaned, aiResult.tokenUsage, aiResult.speed)
+                                statusMessage = "CMW JSON 生成成功"
+                                isLoading = false
+                                onCmwRender()
+                            }
+                        } catch (e: Exception) {
+                            val detail = e.message ?: e.javaClass.simpleName
+                            withContext(Dispatchers.Main) {
+                                errorMessage = "GLM CMW 生成失败: $detail"
+                                statusMessage = null
+                                isLoading = false
+                            }
+                        }
+                    }
+                    return@Button
+                }
+
                 // ── AI / Paste DSL: remote compilation ──
                 coroutineScope.launch(Dispatchers.IO) {
                     try {
@@ -781,7 +1011,7 @@ fun GeneratorScreen(
                     }
                 }
             },
-            enabled = !isLoading && prompt.isNotBlank(),
+            enabled = !isLoading && (isPredefinedMode || prompt.isNotBlank()),
             modifier = Modifier.fillMaxWidth()
         ) {
             if (isLoading) {
@@ -882,7 +1112,7 @@ private suspend fun callGeminiApi(prompt: String): AiResult = withContext(Dispat
         val startTime = System.currentTimeMillis()
 
         val model = GenerativeModel(
-            modelName = "gemini-1.5-flash",
+            modelName = "gemini-3.5-flash",
             apiKey = apiKey,
             systemInstruction = content { text(REMOTE_COMPOSE_SYSTEM_PROMPT) }
         )
@@ -934,7 +1164,7 @@ private suspend fun callGeminiA2uiApi(prompt: String): AiResult = withContext(Di
         val startTime = System.currentTimeMillis()
 
         val model = GenerativeModel(
-            modelName = "gemini-1.5-flash",
+            modelName = "gemini-3.5-flash",
             apiKey = apiKey,
             systemInstruction = content { text(fullSystemPrompt) }
         )
@@ -968,7 +1198,7 @@ private suspend fun callGeminiJsonApi(prompt: String): AiResult = withContext(Di
         val startTime = System.currentTimeMillis()
 
         val model = GenerativeModel(
-            modelName = "gemini-1.5-flash",
+            modelName = "gemini-3.5-flash",
             apiKey = apiKey,
             systemInstruction = content { text(fullSystemPrompt) }
         )
@@ -1262,12 +1492,110 @@ private fun normalizeA2uiInput(input: String): String {
     }
     
     // If it's a raw component array (starts with [), wrap it
-    if (cleaned.startsWith("[")) {
-        val createSurface = """{"version":"v0.10-draft","createSurface":{"surfaceId":"main","catalogId":"basic","theme":{"primaryColor":"#6750A4"}}}"""
-        val updateComponents = """{"version":"v0.10-draft","updateComponents":{"surfaceId":"main","components":$cleaned}}"""
-        val updateDataModel = """{"version":"v0.10-draft","updateDataModel":{"surfaceId":"main","path":"/","value":{}}}"""
-        return "$createSurface\n$updateComponents\n$updateDataModel"
-    }
+        return cleaned
+}
 
-    return cleaned
+/**
+ * Call the Gemini API with the CMW custom JSON system prompt.
+ * Uses gemini-1.5-flash to generate CMW JSON with hardware-accelerated effects.
+ */
+private suspend fun callGeminiCmwApi(prompt: String): AiResult = withContext(Dispatchers.IO) {
+    try {
+        val apiKey = getGeminiApiKey()
+        val startTime = System.currentTimeMillis()
+
+        val model = GenerativeModel(
+            modelName = "gemini-3.5-flash",
+            apiKey = apiKey,
+            systemInstruction = content { text(CMW_JSON_SYSTEM_PROMPT) }
+        )
+
+        val response = model.generateContent(prompt)
+        val endTime = System.currentTimeMillis()
+        val result = response.text ?: throw IllegalStateException("Empty response from Gemini")
+
+        val usage = response.usageMetadata
+        val tokens = usage?.let { "${it.totalTokenCount} tokens" }
+        val duration = (endTime - startTime) / 1000.0
+        val speed = if (duration > 0 && usage != null) {
+            String.format("%.1f tokens/s", usage.candidatesTokenCount / duration)
+        } else null
+
+        AiResult(result, tokens, speed)
+    } catch (e: Exception) {
+        throw Exception("Gemini CMW API 调用失败: ${e.message}", e)
+    }
+}
+
+/**
+ * Call the GLM API with the CMW custom JSON system prompt.
+ * Uses glm-4-flash to generate CMW JSON with hardware-accelerated effects.
+ */
+private suspend fun callGlmCmwApi(prompt: String): AiResult = withContext(Dispatchers.IO) {
+    try {
+        val apiKey = "0a5cd5342cd24f2f8e4e44af433be613.AOsuKOY2hIaOKgVT"
+        val client = OkHttp3Client.Builder()
+            .connectTimeout(30, java.util.concurrent.TimeUnit.SECONDS)
+            .readTimeout(120, java.util.concurrent.TimeUnit.SECONDS)
+            .writeTimeout(30, java.util.concurrent.TimeUnit.SECONDS)
+            .build()
+
+        val startTime = System.currentTimeMillis()
+        val requestJson = JSONObject().apply {
+            put("model", "glm-4-flash")
+            put("messages", org.json.JSONArray().apply {
+                put(JSONObject().apply {
+                    put("role", "system")
+                    put("content", CMW_JSON_SYSTEM_PROMPT)
+                })
+                put(JSONObject().apply {
+                    put("role", "user")
+                    put("content", prompt)
+                })
+            })
+            put("max_tokens", 4096)
+            put("temperature", 0.7)
+        }
+
+        val body = requestJson.toString()
+            .toRequestBody("application/json; charset=utf-8".toMediaType())
+
+        val request = OkHttp3Request.Builder()
+            .url("https://open.bigmodel.cn/api/paas/v4/chat/completions")
+            .addHeader("Authorization", "Bearer $apiKey")
+            .addHeader("Content-Type", "application/json")
+            .post(body)
+            .build()
+
+        val response = client.newCall(request).execute()
+        val endTime = System.currentTimeMillis()
+        val responseBody = response.body?.string()
+            ?: throw IllegalStateException("Empty response body from GLM")
+
+        if (!response.isSuccessful) {
+            throw IllegalStateException(
+                "GLM API error ${response.code}: ${responseBody.take(300)}"
+            )
+        }
+
+        val json = JSONObject(responseBody)
+        val choices = json.getJSONArray("choices")
+        if (choices.length() == 0) {
+            throw IllegalStateException("No choices in GLM response")
+        }
+        val message = choices.getJSONObject(0).getJSONObject("message")
+        val content = message.getString("content")
+
+        val usage = json.optJSONObject("usage")
+        val tokens = usage?.let { "${it.optInt("total_tokens")} tokens" }
+        val completionTokens = usage?.optInt("completion_tokens") ?: 0
+        val duration = (endTime - startTime) / 1000.0
+        val speed = if (duration > 0 && completionTokens > 0) {
+            String.format("%.1f tokens/s", completionTokens / duration)
+        } else null
+
+        AiResult(content, tokens, speed)
+    } catch (e: Exception) {
+        throw Exception("GLM CMW API 调用失败: ${e.message}", e)
+    }
 }
