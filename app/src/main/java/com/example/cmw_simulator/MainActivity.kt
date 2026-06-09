@@ -3,6 +3,7 @@ package com.example.cmw_simulator
 import android.net.Uri
 import android.os.Bundle
 import android.widget.FrameLayout
+import android.widget.Toast
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
@@ -137,8 +138,105 @@ private fun GeneratorTab(
             )
         }
         composable("liquid_glass") {
+            val context = LocalContext.current
+            val coroutineScope = rememberCoroutineScope()
+            var isCompiling by remember { mutableStateOf(false) }
+
+            // Save as JSON (no backend needed)
+            val saveJsonLauncher = rememberLauncherForActivityResult(
+                contract = ActivityResultContracts.CreateDocument("application/json")
+            ) { uri ->
+                uri?.let {
+                    coroutineScope.launch(Dispatchers.IO) {
+                        try {
+                            context.contentResolver.openOutputStream(it)?.use { out ->
+                                out.write(LIQUID_GLASS_RC_JSON.toByteArray(Charsets.UTF_8))
+                            }
+                            withContext(Dispatchers.Main) {
+                                Toast.makeText(context, "已保存为 JSON 文件", Toast.LENGTH_SHORT).show()
+                            }
+                        } catch (e: Exception) {
+                            withContext(Dispatchers.Main) {
+                                Toast.makeText(context, "保存失败: ${e.message}", Toast.LENGTH_SHORT).show()
+                            }
+                        }
+                    }
+                }
+            }
+
+            // Save as .rc (requires backend compiler)
+            val saveRcLauncher = rememberLauncherForActivityResult(
+                contract = ActivityResultContracts.CreateDocument("application/octet-stream")
+            ) { uri ->
+                uri?.let {
+                    coroutineScope.launch(Dispatchers.IO) {
+                        try {
+                            isCompiling = true
+                            val rcBytes = RcCompiler.compileJsonToRc(LIQUID_GLASS_RC_JSON)
+                            if (rcBytes != null && rcBytes.isNotEmpty()) {
+                                context.contentResolver.openOutputStream(it)?.use { out ->
+                                    out.write(rcBytes)
+                                }
+                                withContext(Dispatchers.Main) {
+                                    Toast.makeText(context, "已保存到 .rc 文件 (${rcBytes.size} bytes)", Toast.LENGTH_SHORT).show()
+                                }
+                            } else {
+                                withContext(Dispatchers.Main) {
+                                    Toast.makeText(context, "编译失败 — 请确认后端编译服务器 (10.0.2.2:8080) 是否已启动", Toast.LENGTH_LONG).show()
+                                }
+                            }
+                        } catch (e: Exception) {
+                            withContext(Dispatchers.Main) {
+                                Toast.makeText(context, "保存失败: ${e.message}", Toast.LENGTH_SHORT).show()
+                            }
+                        } finally {
+                            isCompiling = false
+                        }
+                    }
+                }
+            }
+
             Column(modifier = Modifier.fillMaxSize()) {
-                TopBar("Liquid Glass UI 预览") { navController.popBackStack() }
+                Row(
+                    modifier = Modifier.fillMaxWidth().padding(16.dp),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(
+                        text = "Liquid Glass UI 预览",
+                        style = MaterialTheme.typography.headlineMedium,
+                        fontWeight = FontWeight.Bold,
+                        color = MaterialTheme.colorScheme.primary
+                    )
+                    Row {
+                        Button(
+                            onClick = { saveJsonLauncher.launch("liquid_glass.json") },
+                            colors = ButtonDefaults.buttonColors(
+                                containerColor = MaterialTheme.colorScheme.primaryContainer,
+                                contentColor = MaterialTheme.colorScheme.onPrimaryContainer
+                            )
+                        ) { Text("📋 保存为 JSON", fontSize = 11.sp) }
+                        Spacer(modifier = Modifier.width(4.dp))
+                        Button(
+                            onClick = { saveRcLauncher.launch("liquid_glass.rc") },
+                            enabled = !isCompiling,
+                            colors = ButtonDefaults.buttonColors(
+                                containerColor = MaterialTheme.colorScheme.tertiaryContainer,
+                                contentColor = MaterialTheme.colorScheme.onTertiaryContainer
+                            )
+                        ) {
+                            Text(if (isCompiling) "编译中..." else "💾 保存为 .rc", fontSize = 11.sp)
+                        }
+                        Spacer(modifier = Modifier.width(4.dp))
+                        Button(
+                            onClick = { navController.popBackStack() },
+                            colors = ButtonDefaults.buttonColors(
+                                containerColor = MaterialTheme.colorScheme.secondaryContainer,
+                                contentColor = MaterialTheme.colorScheme.onSecondaryContainer
+                            )
+                        ) { Text("← 返回", fontSize = 12.sp) }
+                    }
+                }
                 Box(modifier = Modifier.weight(1f)) { LiquidGlassMusicPlayer() }
             }
         }
@@ -200,6 +298,7 @@ fun RcViewerTab() {
     val coroutineScope = rememberCoroutineScope()
 
     var documentBytes by remember { mutableStateOf<ByteArray?>(null) }
+    var jsonDocument by remember { mutableStateOf<JsonUiDocument?>(null) }
     var fileName by remember { mutableStateOf<String?>(null) }
     var eventLogs by remember { mutableStateOf(listOf<String>()) }
     var errorMessage by remember { mutableStateOf<String?>(null) }
@@ -212,18 +311,32 @@ fun RcViewerTab() {
             fileName = queryFileName(it)
             isLoading = true
             errorMessage = null
+            jsonDocument = null
+            documentBytes = null
             coroutineScope.launch(Dispatchers.IO) {
                 try {
                     val bytes = context.contentResolver.openInputStream(it)?.use { input ->
                         input.readBytes()
                     } ?: throw IllegalStateException("无法打开文件流")
-                    withContext(Dispatchers.Main) {
-                        documentBytes = bytes
-                        isLoading = false
+
+                    // Auto-detect: if content starts with '{' it's JSON, otherwise binary RC
+                    val head = bytes.take(100).map { it.toInt().toChar() }.joinToString("").trimStart()
+                    if (head.startsWith("{")) {
+                        val jsonStr = String(bytes, Charsets.UTF_8)
+                        val doc = parseJsonUiDocument(jsonStr)
+                        withContext(Dispatchers.Main) {
+                            jsonDocument = doc
+                            isLoading = false
+                        }
+                    } else {
+                        withContext(Dispatchers.Main) {
+                            documentBytes = bytes
+                            isLoading = false
+                        }
                     }
                 } catch (e: Exception) {
                     withContext(Dispatchers.Main) {
-                        errorMessage = "读取文件失败: ${e.message}"
+                        errorMessage = "加载失败: ${e.message}"
                         isLoading = false
                     }
                 }
@@ -246,7 +359,7 @@ fun RcViewerTab() {
         Spacer(modifier = Modifier.height(8.dp))
 
         Text(
-            text = "选择一个 .rc 文件直接加载并渲染",
+            text = "支持 .rc 二进制文件和 .json SDUI 文件",
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant
         )
@@ -262,7 +375,7 @@ fun RcViewerTab() {
                 onClick = { filePickerLauncher.launch("*/*") },
                 enabled = !isLoading
             ) {
-                Text(if (isLoading) "加载中..." else "📂 选择 .rc 文件")
+                Text(if (isLoading) "加载中..." else "📂 选择文件")
             }
             fileName?.let { name ->
                 Text(
@@ -281,9 +394,14 @@ fun RcViewerTab() {
             Text(text = msg, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall)
         }
 
+        if (isLoading) {
+            Spacer(modifier = Modifier.height(12.dp))
+            androidx.compose.material3.LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
+        }
+
         Spacer(modifier = Modifier.height(12.dp))
 
-        // ── RC Render Area ──
+        // ── Render Area ──
         Box(
             modifier = Modifier
                 .weight(1f)
@@ -292,78 +410,97 @@ fun RcViewerTab() {
                 .border(1.dp, Color.Gray, RoundedCornerShape(8.dp)),
             contentAlignment = Alignment.Center
         ) {
+            val jsonDoc = jsonDocument
             val bytes = documentBytes
-            if (bytes != null) {
-                AndroidView(
-                    factory = { ctx ->
-                        val playerClass = Class.forName(
-                            "androidx.compose.remote.player.view.RemoteComposePlayer"
-                        )
-                        val constructor = playerClass.getConstructor(android.content.Context::class.java)
-                        val player = constructor.newInstance(ctx) as FrameLayout
 
-                        try {
-                            val mInnerField = playerClass.getDeclaredField("mInner")
-                            mInnerField.isAccessible = true
-                            val innerView = mInnerField.get(player)
-
-                            val addListenerMethod = innerView.javaClass.getMethod(
-                                "addIdActionListener",
-                                Class.forName("androidx.compose.remote.player.view.RemoteComposeView\$ClickCallbacks")
+            when {
+                jsonDoc != null -> {
+                    // JSON SDUI rendering
+                    Column(
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .verticalScroll(rememberScrollState())
+                            .padding(horizontal = 16.dp)
+                    ) {
+                        JsonUiRenderer(document = jsonDoc)
+                    }
+                }
+                bytes != null -> {
+                    // Binary RC rendering
+                    AndroidView(
+                        factory = { ctx ->
+                            val playerClass = Class.forName(
+                                "androidx.compose.remote.player.view.RemoteComposePlayer"
                             )
+                            val constructor = playerClass.getConstructor(android.content.Context::class.java)
+                            val player = constructor.newInstance(ctx) as FrameLayout
 
-                            val callbackClass = Class.forName(
-                                "androidx.compose.remote.player.view.RemoteComposeView\$ClickCallbacks"
-                            )
-                            val callback = java.lang.reflect.Proxy.newProxyInstance(
-                                callbackClass.classLoader,
-                                arrayOf(callbackClass)
-                            ) { _, method, args ->
-                                if (method.name == "click") {
-                                    val id = args[0] as Int
-                                    val metadata = args[1] as String
-                                    val timestamp = SimpleDateFormat("HH:mm:ss", Locale.getDefault()).format(Date())
-                                    eventLogs = eventLogs + "[$timestamp] 点击 → ID: $id, \"$metadata\""
-                                    if (metadata.startsWith("appfn:")) {
-                                        coroutineScope.launch(Dispatchers.Main) {
-                                            AppFunctionManager.executeFunction(context, metadata)
+                            try {
+                                val mInnerField = playerClass.getDeclaredField("mInner")
+                                mInnerField.isAccessible = true
+                                val innerView = mInnerField.get(player)
+
+                                val addListenerMethod = innerView.javaClass.getMethod(
+                                    "addIdActionListener",
+                                    Class.forName("androidx.compose.remote.player.view.RemoteComposeView\$ClickCallbacks")
+                                )
+
+                                val callbackClass = Class.forName(
+                                    "androidx.compose.remote.player.view.RemoteComposeView\$ClickCallbacks"
+                                )
+                                val callback = java.lang.reflect.Proxy.newProxyInstance(
+                                    callbackClass.classLoader,
+                                    arrayOf(callbackClass)
+                                ) { _, method, args ->
+                                    if (method.name == "click") {
+                                        val id = args[0] as Int
+                                        val metadata = args[1] as String
+                                        val timestamp = SimpleDateFormat("HH:mm:ss", Locale.getDefault()).format(Date())
+                                        eventLogs = eventLogs + "[$timestamp] 点击 → ID: $id, \"$metadata\""
+                                        if (metadata.startsWith("appfn:")) {
+                                            coroutineScope.launch(Dispatchers.Main) {
+                                                AppFunctionManager.executeFunction(context, metadata)
+                                            }
                                         }
                                     }
+                                    null
                                 }
-                                null
+                                addListenerMethod.invoke(innerView, callback)
+                            } catch (e: Exception) {
+                                val timestamp = SimpleDateFormat("HH:mm:ss", Locale.getDefault()).format(Date())
+                                eventLogs = eventLogs + "[$timestamp] 监听器设置失败: ${e.message}"
                             }
-                            addListenerMethod.invoke(innerView, callback)
-                        } catch (e: Exception) {
-                            val timestamp = SimpleDateFormat("HH:mm:ss", Locale.getDefault()).format(Date())
-                            eventLogs = eventLogs + "[$timestamp] 监听器设置失败: ${e.message}"
-                        }
 
-                        player.layoutParams = FrameLayout.LayoutParams(
-                            FrameLayout.LayoutParams.MATCH_PARENT,
-                            FrameLayout.LayoutParams.MATCH_PARENT
-                        )
-                        player
-                    },
-                    update = { player ->
-                        try {
-                            val playerClass = player.javaClass
-                            val setDocumentMethod = playerClass.getMethod("setDocument", ByteArray::class.java)
-                            val lastHash = player.getTag()
-                            val currentHash = bytes.contentHashCode()
-                            if (lastHash != currentHash) {
-                                setDocumentMethod.invoke(player, bytes)
-                                player.setTag(currentHash)
+                            player.layoutParams = FrameLayout.LayoutParams(
+                                FrameLayout.LayoutParams.MATCH_PARENT,
+                                FrameLayout.LayoutParams.MATCH_PARENT
+                            )
+                            player
+                        },
+                        update = { player ->
+                            try {
+                                val playerClass = player.javaClass
+                                val setDocumentMethod = playerClass.getMethod("setDocument", ByteArray::class.java)
+                                val lastHash = player.getTag()
+                                val currentHash = bytes.contentHashCode()
+                                if (lastHash != currentHash) {
+                                    setDocumentMethod.invoke(player, bytes)
+                                    player.setTag(currentHash)
+                                }
+                            } catch (e: Exception) {
+                                errorMessage = "RC 文档渲染失败: ${e.message}"
                             }
-                        } catch (_: Exception) {}
-                    },
-                    modifier = Modifier.fillMaxSize()
-                )
-            } else {
-                Text(
-                    text = "请选择一个 .rc 文件以预览",
-                    color = Color.Gray,
-                    style = MaterialTheme.typography.bodyLarge
-                )
+                        },
+                        modifier = Modifier.fillMaxSize()
+                    )
+                }
+                else -> {
+                    Text(
+                        text = "请选择一个 .rc 或 .json 文件以预览",
+                        color = Color.Gray,
+                        style = MaterialTheme.typography.bodyLarge
+                    )
+                }
             }
         }
 
@@ -401,7 +538,7 @@ fun RcViewerTab() {
             if (eventLogs.isEmpty()) {
                 item {
                     Text(
-                        text = "暂无事件。加载 .rc 文件并交互以查看日志。",
+                        text = "暂无事件。加载文件并交互以查看日志。",
                         color = Color(0xFF888888),
                         fontSize = 12.sp,
                         fontFamily = FontFamily.Monospace
@@ -501,6 +638,29 @@ fun RemoteComposeTesterScreen(
         }
     }
 
+    val saveLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.CreateDocument("application/octet-stream")
+    ) { uri ->
+        uri?.let {
+            coroutineScope.launch(Dispatchers.IO) {
+                try {
+                    documentBytes?.let { bytes ->
+                        context.contentResolver.openOutputStream(it)?.use { out ->
+                            out.write(bytes)
+                        }
+                        withContext(Dispatchers.Main) {
+                            Toast.makeText(context, "已保存", Toast.LENGTH_SHORT).show()
+                        }
+                    }
+                } catch (e: Exception) {
+                    withContext(Dispatchers.Main) {
+                        Toast.makeText(context, "保存失败: ${e.message}", Toast.LENGTH_SHORT).show()
+                    }
+                }
+            }
+        }
+    }
+
     Column(modifier = Modifier.fillMaxSize().padding(16.dp)) {
         Row(
             modifier = Modifier.fillMaxWidth(),
@@ -509,6 +669,16 @@ fun RemoteComposeTesterScreen(
         ) {
             Text(text = "RC 文档测试台", style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary)
             Row {
+                if (documentBytes != null) {
+                    Button(
+                        onClick = { saveLauncher.launch("generated_ui.rc") },
+                        colors = ButtonDefaults.buttonColors(
+                            containerColor = MaterialTheme.colorScheme.primaryContainer,
+                            contentColor = MaterialTheme.colorScheme.onPrimaryContainer
+                        )
+                    ) { Text("💾 保存到文件", fontSize = 12.sp) }
+                    Spacer(modifier = Modifier.width(8.dp))
+                }
                 onBack?.let {
                     Button(onClick = it, colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.secondaryContainer, contentColor = MaterialTheme.colorScheme.onSecondaryContainer)) { Text("← 返回", fontSize = 12.sp) }
                     Spacer(modifier = Modifier.width(8.dp))
@@ -572,7 +742,9 @@ fun RemoteComposeTesterScreen(
                             val lastHash = player.getTag()
                             val currentHash = bytes.contentHashCode()
                             if (lastHash != currentHash) { setDocumentMethod.invoke(player, bytes); player.setTag(currentHash) }
-                        } catch (_: Exception) {}
+                        } catch (e: Exception) {
+                            errorMessage = "RC 文档渲染失败: ${e.message}"
+                        }
                     },
                     modifier = Modifier.fillMaxSize()
                 )

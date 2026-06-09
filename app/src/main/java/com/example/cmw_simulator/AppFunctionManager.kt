@@ -74,6 +74,13 @@ object AppFunctionManager {
             description = "Opens the Android system Settings app.",
             parameters = "(none)",
             exampleUsage = "\"clickableAction\": \"appfn:open_settings\""
+        ),
+        AppFunction(
+            name = "Show Fitness Stats",
+            uri = "appfn:toast?message=Steps:8742+HR:72bpm+Cal:486",
+            description = "Displays a toast with the user's current fitness snapshot (steps, heart rate, calories burned, active minutes, distance).",
+            parameters = "(none) — reads local fitness data automatically.",
+            exampleUsage = "\"clickableAction\": \"appfn:toast?message=Steps:8742+HR:72bpm+Cal:486\""
         )
     )
 
@@ -112,6 +119,21 @@ object AppFunctionManager {
             deviceContext.put("system_volume_percent", volumePercent)
             deviceContext.put("flashlight_enabled", isFlashlightOn)
             deviceContext.put("api_level", Build.VERSION.SDK_INT)
+
+            // Fitness metrics (simulated)
+            val fitness = getFitnessMetrics()
+            deviceContext.put("fitness_steps", fitness.getInt("steps"))
+            deviceContext.put("fitness_heart_rate_bpm", fitness.getInt("heartRateBpm"))
+            deviceContext.put("fitness_calories", fitness.getInt("caloriesBurned"))
+            deviceContext.put("fitness_active_minutes", fitness.getInt("activeMinutes"))
+            deviceContext.put("fitness_distance_km", fitness.getDouble("distanceKm"))
+
+            // Countdown target — 60 days from now for marathon simulation
+            val targetDate = java.text.SimpleDateFormat("yyyy-MM-dd", java.util.Locale.US)
+                .format(java.util.Date(System.currentTimeMillis() + 60L * 24 * 60 * 60 * 1000))
+            deviceContext.put("countdown_target_date", targetDate)
+            deviceContext.put("current_date", java.text.SimpleDateFormat("yyyy-MM-dd", java.util.Locale.US)
+                .format(java.util.Date()))
 
         } catch (e: Exception) {
             e.printStackTrace()
@@ -196,6 +218,22 @@ object AppFunctionManager {
     }
 
     // ── Private Helpers ──────────────────────────────────────────────────
+
+    /**
+     * Returns simulated fitness metrics as a JSONObject.
+     * In production this would query Health Connect or a wearable API.
+     */
+    fun getFitnessMetrics(): JSONObject {
+        return JSONObject().apply {
+            put("steps", 8742)
+            put("heartRateBpm", 72)
+            put("caloriesBurned", 486)
+            put("activeMinutes", 45)
+            put("distanceKm", 6.2)
+            put("date", java.text.SimpleDateFormat("yyyy-MM-dd", java.util.Locale.US)
+                .format(java.util.Date()))
+        }
+    }
 
     private fun parseParams(queryString: String): Map<String, String> {
         val map = mutableMapOf<String, String>()

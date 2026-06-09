@@ -82,14 +82,15 @@ dependencies {
     // Navigation
     implementation(libs.navigation.compose)
 
-    // Remote Compose (Player)
+    // AppFunctions (expose local capabilities to AI models)
+    implementation(libs.appfunctions.core)
+    implementation(libs.appfunctions.service)
+    // ksp(libs.appfunctions.compiler) // KSP not available for Kotlin 2.3.21; manual registration
+
+    // Remote Compose (Player only — no creation/server-side deps)
     implementation(libs.remote.player.core)
     implementation(libs.remote.player.view)
     implementation(libs.remote.player.compose)
-
-    // Remote Compose (Creation)
-    implementation(libs.remote.creation.core)
-    implementation(libs.remote.core)
 
     // Google AI SDK (Gemini)
     implementation(libs.generative.ai)
@@ -102,6 +103,9 @@ dependencies {
 
     // A2UI Compose renderer
     implementation(project(":a2ui-compose"))
+
+    // Graphics Shapes (RoundedPolygon, Morph for non-square widgets)
+    implementation("androidx.graphics:graphics-shapes:1.1.0")
 
 
 

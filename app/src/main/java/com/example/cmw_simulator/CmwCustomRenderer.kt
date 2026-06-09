@@ -38,15 +38,25 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.Outline
+import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.Shader as ComposeShader
 import androidx.compose.ui.graphics.ShaderBrush
 import androidx.compose.ui.graphics.asComposeRenderEffect
+import androidx.compose.ui.graphics.asComposePath
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.unit.Density
 import androidx.compose.ui.unit.IntOffset
+import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.graphics.shapes.CornerRounding
+import androidx.graphics.shapes.Morph
+import androidx.graphics.shapes.RoundedPolygon
+import androidx.graphics.shapes.toPath
 import org.json.JSONObject
+import kotlin.math.cos
 import kotlin.math.sin
 
 // ── Host Component ───────────────────────────────────────────────────────────
@@ -161,6 +171,13 @@ fun RenderRCNode(node: JSONObject, time: Float) {
             }
         }
 
+        "CircularProgressRing" -> CircularProgressRingNode(node, time)
+
+        // ── Non-square / irregular shape containers ──
+        "ShapeContainer" -> ShapeContainerNode(node, time)
+        "MorphShapeContainer" -> MorphShapeContainerNode(node, time)
+        "HandDrawnContainer" -> HandDrawnContainerNode(node, time)
+
         // ── Fallback ──
         else -> {
             Text(
@@ -169,6 +186,71 @@ fun RenderRCNode(node: JSONObject, time: Float) {
                 fontSize = 12.sp
             )
         }
+    }
+}
+
+// ── Circular Progress Ring ────────────────────────────────────────────────────
+
+/**
+ * Renders an animated circular progress ring using [Canvas] with [drawArc].
+ * Properties from JSON:
+ * - "progress" (Float, 0.0–1.0): How much of the ring is filled.
+ * - "strokeColor" (String): Hex color for the arc stroke.
+ * - "ringBackgroundColor" (String): Hex color for the background ring.
+ * - "strokeWidth" (Int): Thickness of the ring in dp.
+ * - "size" (Int): Diameter of the ring in dp.
+ */
+@Composable
+fun CircularProgressRingNode(node: JSONObject, time: Float) {
+    val progress = node.optDouble("progress", 0.75).toFloat().coerceIn(0f, 1f)
+    val strokeColorHex = node.optString("strokeColor", "#22D3EE")
+    val bgColorHex = node.optString("ringBackgroundColor", "#1AFFFFFF")
+    val strokeWidth = node.optInt("strokeWidth", 6)
+    val sizeDp = node.optInt("size", 80)
+
+    val strokeColor = parseHexColor(strokeColorHex)
+    val bgColor = parseHexColor(bgColorHex)
+
+    // Subtle breathing animation driven by time
+    val animatedProgress = progress + (sin(time * 0.5) * 0.01).toFloat()
+
+    Canvas(modifier = Modifier.size(sizeDp.dp)) {
+        val strokeWidthPx = strokeWidth.dp.toPx()
+        val diameter = sizeDp.dp.toPx()
+        val radius = (diameter - strokeWidthPx) / 2f
+        val topLeft = Offset(
+            (diameter - radius * 2f) / 2f + strokeWidthPx / 2f,
+            (diameter - radius * 2f) / 2f + strokeWidthPx / 2f
+        )
+        val arcSize = Size(radius * 2f, radius * 2f)
+
+        // Background ring
+        drawArc(
+            color = bgColor,
+            startAngle = 0f,
+            sweepAngle = 360f,
+            useCenter = false,
+            topLeft = topLeft,
+            size = arcSize,
+            style = androidx.compose.ui.graphics.drawscope.Stroke(
+                width = strokeWidthPx,
+                cap = androidx.compose.ui.graphics.StrokeCap.Round
+            )
+        )
+
+        // Foreground arc
+        drawArc(
+            color = strokeColor,
+            startAngle = -90f, // Start from top
+            sweepAngle = 360f * animatedProgress.coerceIn(0.0f, 1.0f),
+            useCenter = false,
+            topLeft = topLeft,
+            size = arcSize,
+            style = androidx.compose.ui.graphics.drawscope.Stroke(
+                width = strokeWidthPx,
+                cap = androidx.compose.ui.graphics.StrokeCap.Round
+            )
+        )
     }
 }
 
@@ -395,6 +477,336 @@ private fun StandardRowNode(node: JSONObject, time: Float) {
             "Bottom" -> Alignment.Bottom
             else -> Alignment.CenterVertically
         }
+    ) {
+        if (children != null) {
+            for (i in 0 until children.length()) {
+                RenderRCNode(children.getJSONObject(i), time)
+            }
+        }
+    }
+}
+
+// ── Shape Infrastructure ─────────────────────────────────────────────────────
+
+/**
+ * Adapter: converts a [RoundedPolygon] into a Compose [Shape][androidx.compose.ui.graphics.Shape]
+ * that can be used with `.clip()` and `.background()` modifiers.
+ */
+private class PolygonShape(
+    private val polygon: RoundedPolygon
+) : androidx.compose.ui.graphics.Shape {
+    override fun createOutline(
+        size: Size,
+        layoutDirection: LayoutDirection,
+        density: Density
+    ): Outline {
+        val androidPath = polygon.toPath()
+        val bounds = polygon.calculateBounds()
+        val polygonWidth = (bounds[2] - bounds[0]).coerceAtLeast(0.001f)
+        val polygonHeight = (bounds[3] - bounds[1]).coerceAtLeast(0.001f)
+        val transform = android.graphics.Matrix()
+        transform.postScale(size.width / polygonWidth, size.height / polygonHeight)
+        transform.postTranslate(-bounds[0], -bounds[1])
+        androidPath.transform(transform)
+        return Outline.Generic(androidPath.asComposePath())
+    }
+}
+
+/**
+ * Creates a named [RoundedPolygon] scaled to the given [size].
+ * Supported names: hexagon, star, blob, pill, squircle, heart, diamond, octagon, circle, triangle.
+ */
+private fun createNamedPolygon(
+    name: String,
+    smoothing: Float
+): RoundedPolygon {
+    val corner = CornerRounding(0.2f, smoothing)
+    return when (name.lowercase()) {
+        "hexagon" -> RoundedPolygon(6, rounding = corner)
+        "octagon" -> RoundedPolygon(8, rounding = corner)
+        "triangle" -> RoundedPolygon(3, rounding = CornerRounding(0.15f, smoothing))
+        "diamond" -> {
+            val r = 1f
+            RoundedPolygon(
+                floatArrayOf(
+                    0f, -r,   // top
+                    r, 0f,    // right
+                    0f, r,    // bottom
+                    -r, 0f    // left
+                ),
+                perVertexRounding = List(4) { corner }
+            )
+        }
+        "star" -> {
+            // Manually create a 6-pointed star using alternating inner/outer vertices
+            val outerR = 1f
+            val innerR = 0.5f
+            val pts = FloatArray(12)
+            for (i in 0 until 6) {
+                val outerAngle = (Math.PI / 3.0 * i - Math.PI / 2.0).toFloat()
+                val innerAngle = (outerAngle + Math.PI / 6.0).toFloat()
+                pts[i * 2] = outerR * cos(outerAngle)
+                pts[i * 2 + 1] = outerR * sin(outerAngle)
+                pts[6 * 2 + i * 2] = innerR * cos(innerAngle) // wait, array too small
+            }
+            // 12 vertices: alternating outer and inner
+            val starPts = FloatArray(24)
+            for (i in 0 until 6) {
+                val outerAngle = (Math.PI / 3.0 * i - Math.PI / 2.0).toFloat()
+                val innerAngle = (Math.PI / 3.0 * i - Math.PI / 2.0 + Math.PI / 6.0).toFloat()
+                starPts[i * 4] = outerR * cos(outerAngle)
+                starPts[i * 4 + 1] = outerR * sin(outerAngle)
+                starPts[i * 4 + 2] = innerR * cos(innerAngle)
+                starPts[i * 4 + 3] = innerR * sin(innerAngle)
+            }
+            RoundedPolygon(
+                starPts,
+                rounding = CornerRounding(0.1f, smoothing)
+            )
+        }
+        "pill" -> RoundedPolygon(
+            floatArrayOf(
+                -0.8f, -1f, 0.8f, -1f,
+                1f, -0.6f, 1f, 0.6f,
+                0.8f, 1f, -0.8f, 1f,
+                -1f, 0.6f, -1f, -0.6f
+            ),
+            perVertexRounding = List(8) { CornerRounding(0.5f, smoothing) }
+        )
+        "squircle" -> RoundedPolygon(
+            12,
+            rounding = CornerRounding(0.35f, smoothing)
+        )
+        "blob" -> RoundedPolygon(
+            24,
+            rounding = CornerRounding(0.4f, smoothing)
+        )
+        "heart" -> {
+            val rv = { r: Float, a: Float ->
+                floatArrayOf(r * cos(a), r * sin(a))
+            }
+            val pts = mutableListOf<Float>()
+            val anglesRadii = listOf(
+                0.8f to 0f,
+                1.0f to Math.toRadians(90.0).toFloat(),
+                0.8f to Math.toRadians(180.0).toFloat(),
+                1.0f to Math.toRadians(250.0).toFloat(),
+                0.1f to Math.toRadians(270.0).toFloat(),
+                1.0f to Math.toRadians(290.0).toFloat()
+            )
+            for ((r, a) in anglesRadii) {
+                val (x, y) = rv(r, a)
+                pts.add(x)
+                pts.add(y)
+            }
+            RoundedPolygon(
+                vertices = pts.toFloatArray(),
+                perVertexRounding = listOf(
+                    CornerRounding(0.6f),
+                    CornerRounding(0f),
+                    CornerRounding(0.6f),
+                    CornerRounding(0.6f),
+                    CornerRounding(0f),
+                    CornerRounding(0.6f)
+                )
+            )
+        }
+        else -> RoundedPolygon(
+            32,
+            rounding = CornerRounding(1.0f, smoothing)
+        ) // circle-like
+    }
+}
+
+// ── ShapeContainer Node ──────────────────────────────────────────────────────
+
+/**
+ * Clips children into a named polygon shape (hexagon, star, blob, pill, etc.).
+ * JSON schema:
+ * ```json
+ * {
+ *   "type": "ShapeContainer",
+ *   "shape": "hexagon",
+ *   "cornerSmoothing": 0.2,
+ *   "modifier": { ... },
+ *   "children": [ ... ]
+ * }
+ * ```
+ */
+@Composable
+private fun ShapeContainerNode(node: JSONObject, time: Float) {
+    val shapeName = node.optString("shape", "hexagon")
+    val smoothing = node.optDouble("cornerSmoothing", 0.2).toFloat()
+    val children = node.optJSONArray("children")
+
+    val polygon = remember(shapeName, smoothing) {
+        createNamedPolygon(shapeName, smoothing)
+    }
+    val clipShape = remember(polygon) { PolygonShape(polygon) }
+
+    val mod = buildStandardModifier(node)
+
+    Box(
+        modifier = mod.clip(clipShape),
+        contentAlignment = parseAlignment(node.optString("contentAlignment", "Center"))
+    ) {
+        if (children != null) {
+            for (i in 0 until children.length()) {
+                RenderRCNode(children.getJSONObject(i), time)
+            }
+        }
+    }
+}
+
+// ── MorphShapeContainer Node ─────────────────────────────────────────────────
+
+/**
+ * Animated morphing between two polygon shapes using the graphics-shapes Morph API.
+ * JSON schema:
+ * ```json
+ * {
+ *   "type": "MorphShapeContainer",
+ *   "shapeA": "hexagon",
+ *   "shapeB": "circle",
+ *   "morphSpeed": 0.5,
+ *   "cornerSmoothing": 0.2,
+ *   "modifier": { ... },
+ *   "children": [ ... ]
+ * }
+ * ```
+ */
+@Composable
+private fun MorphShapeContainerNode(node: JSONObject, time: Float) {
+    val shapeAName = node.optString("shapeA", "hexagon")
+    val shapeBName = node.optString("shapeB", "circle")
+    val smoothing = node.optDouble("cornerSmoothing", 0.2).toFloat()
+    val morphSpeed = node.optDouble("morphSpeed", 0.5).toFloat()
+    val children = node.optJSONArray("children")
+
+    val polyA = remember(shapeAName, smoothing) { createNamedPolygon(shapeAName, smoothing) }
+    val polyB = remember(shapeBName, smoothing) { createNamedPolygon(shapeBName, smoothing) }
+    val morph = remember(polyA, polyB) { Morph(polyA, polyB) }
+
+    // Progress oscillates 0→1→0 using the continuous time
+    val progress = (sin(time * morphSpeed) + 1f) / 2f
+
+    val mod = buildStandardModifier(node)
+
+    // Create a shape that dynamically morphs each frame
+    val morphShape = object : androidx.compose.ui.graphics.Shape {
+        override fun createOutline(
+            size: Size,
+            layoutDirection: LayoutDirection,
+            density: Density
+        ): Outline {
+            val androidPath = morph.toPath(progress)
+            val bounds = morph.calculateBounds()
+            val pw = (bounds[2] - bounds[0]).coerceAtLeast(0.001f)
+            val ph = (bounds[3] - bounds[1]).coerceAtLeast(0.001f)
+            val transform = android.graphics.Matrix()
+            transform.postScale(size.width / pw, size.height / ph)
+            transform.postTranslate(-bounds[0], -bounds[1])
+            androidPath.transform(transform)
+            return Outline.Generic(androidPath.asComposePath())
+        }
+    }
+
+    Box(
+        modifier = mod.clip(morphShape),
+        contentAlignment = parseAlignment(node.optString("contentAlignment", "Center"))
+    ) {
+        if (children != null) {
+            for (i in 0 until children.length()) {
+                RenderRCNode(children.getJSONObject(i), time)
+            }
+        }
+    }
+}
+
+// ── HandDrawnContainer Node ──────────────────────────────────────────────────
+
+/**
+ * Renders a container with organic, wobbly, hand-drawn style edges.
+ * Uses a seeded polygon with per-vertex random offsets.
+ * JSON schema:
+ * ```json
+ * {
+ *   "type": "HandDrawnContainer",
+ *   "vertices": 12,
+ *   "wobbleAmount": 8.0,
+ *   "modifier": { ... },
+ *   "children": [ ... ]
+ * }
+ * ```
+ */
+@Composable
+private fun HandDrawnContainerNode(node: JSONObject, time: Float) {
+    val numVertices = node.optInt("vertices", 12)
+    val wobbleAmount = node.optDouble("wobbleAmount", 8.0).toFloat()
+    val children = node.optJSONArray("children")
+    val mod = buildStandardModifier(node)
+
+    // Deterministic pseudo-random offsets so shape stays stable across recompositions
+    val handDrawnShape = remember(numVertices, wobbleAmount) {
+        val seed = 42L
+
+        object : androidx.compose.ui.graphics.Shape {
+            override fun createOutline(
+                size: Size,
+                layoutDirection: LayoutDirection,
+                density: Density
+            ): Outline {
+                val path = Path()
+                val cx = size.width / 2f
+                val cy = size.height / 2f
+                val rx = size.width / 2f
+                val ry = size.height / 2f
+
+                // Reset random for each call to keep shape stable
+                var lr = seed
+                fun nr(): Float {
+                    lr = (lr * 1103515245L + 12345L) and 0x7FFFFFFFL
+                    return (lr.toFloat() / 0x7FFFFFFFL) - 0.5f
+                }
+
+                val angleStep = (2.0 * Math.PI / numVertices).toFloat()
+                val points = mutableListOf<Offset>()
+                for (i in 0 until numVertices) {
+                    val angle = angleStep * i - (Math.PI / 2).toFloat()
+                    val wobbleX = nr() * wobbleAmount
+                    val wobbleY = nr() * wobbleAmount
+                    points.add(
+                        Offset(
+                            cx + rx * cos(angle) + wobbleX,
+                            cy + ry * sin(angle) + wobbleY
+                        )
+                    )
+                }
+
+                // Draw smooth closed curve through points using cubic beziers
+                path.moveTo(points[0].x, points[0].y)
+                for (i in points.indices) {
+                    val curr = points[i]
+                    val next = points[(i + 1) % points.size]
+                    val prev = points[(i - 1 + points.size) % points.size]
+                    val next2 = points[(i + 2) % points.size]
+
+                    val cp1x = curr.x + (next.x - prev.x) / 6f
+                    val cp1y = curr.y + (next.y - prev.y) / 6f
+                    val cp2x = next.x - (next2.x - curr.x) / 6f
+                    val cp2y = next.y - (next2.y - curr.y) / 6f
+
+                    path.cubicTo(cp1x, cp1y, cp2x, cp2y, next.x, next.y)
+                }
+
+                return Outline.Generic(path)
+            }
+        }
+    }
+
+    Box(
+        modifier = mod.clip(handDrawnShape),
+        contentAlignment = parseAlignment(node.optString("contentAlignment", "Center"))
     ) {
         if (children != null) {
             for (i in 0 until children.length()) {

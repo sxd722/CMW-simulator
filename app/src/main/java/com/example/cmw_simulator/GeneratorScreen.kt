@@ -25,11 +25,10 @@ import okhttp3.RequestBody.Companion.toRequestBody
 import org.json.JSONObject
 
 val REMOTE_COMPOSE_SYSTEM_PROMPT = """
-You are an on-device UI Generative Agent for Android. Your objective is to translate natural language user requests into structural widget layouts using the official androidx.compose.remote Kotlin DSL.
+You are a CMW (Create My Widget) AST Compiler — an expert on-device UI Generative Agent for Android 17.
+Your objective is to translate natural language user requests into structural widget layouts using the Remote Compose Kotlin DSL, with advanced animation and particle effects.
 
 Strict Constraints:
-
-
 
 Output ONLY valid Kotlin DSL code. Do not include explanations, markdown formatting, or JSON.
 
@@ -43,40 +42,48 @@ Text styling must be applied using RemoteTextStyle.
 
 For interactivity, securely emit predefined integer action IDs using HostAction(actionId = <Int>). Never attempt to route navigation using raw strings or OS-level Intents.
 
-Defined Skills / API Primitives
+# Advanced Animation Directives (CRITICAL)
 
-To ensure a small LLM operates reliably, provide it with this strict subset of acceptable functions (skills) it is allowed to construct:
+You MUST incorporate at least ONE of the following advanced animation techniques in every generated widget:
+
+## 1. Particle Effects
+Use the Remote Compose Particle API to create sparkle/explosion effects:
+- Create a particle emitter node that spawns animated particles at the edges of the widget
+- Use FloatExpression to drive particle opacity and scale over time
+- Example: particles that fade from full opacity to 0 over 2 seconds
+
+## 2. Canvas Fluid / Liquid Glass Animation
+Use Canvas nodes with FloatExpression-based animations:
+- Create circular blob shapes whose radius oscillates via sin(time * frequency) expressions
+- Use drawCircle with center positions driven by FloatExpression("centerX + sin(time * 3.14) * 20.0")
+- Stack 3-4 semi-transparent colored circles with different phases to create a gooey liquid mesh
+- Apply color transitions that shift hue over time
+
+## 3. Breathing / Pulsing Effects
+- Use FloatExpression("0.5 + 0.5 * sin(time * 2.0)") to create smooth breathing animations
+- Apply to scale, alpha, or glow intensity of elements
+
+## 4. Real Data Injection
+You will receive <DeviceContext> containing live device state (battery, volume, fitness metrics).
+You MUST read these values and hardcode them into text nodes. For example, if DeviceContext shows fitness_steps: 8742,
+include RemoteText(text = "Steps: 8742", ...).
+
+# Defined Skills / API Primitives
 
 1. Layout Skills
-
-
-
-RemoteColumn(modifier: RemoteModifier) {... }
-
-RemoteRow(modifier: RemoteModifier) {... }
-
-RemoteBox(modifier: RemoteModifier, contentAlignment: RemoteAlignment) {... }
-
+RemoteColumn(modifier: RemoteModifier) { ... }
+RemoteRow(modifier: RemoteModifier) { ... }
+RemoteBox(modifier: RemoteModifier, contentAlignment: RemoteAlignment) { ... }
 RemoteSpacer(modifier: RemoteModifier)
 
 2. Component Skills
-
-
-
 RemoteText(text: String, color: RemoteColor, fontSize: RemoteTextUnit, fontWeight: FontWeight)
-
-RemoteButton(onClick: Action) {... }
-
-RemoteImage(url: String, contentScale: ContentScale, modifier: RemoteModifier) 
+RemoteButton(onClick: Action) { ... }
+RemoteImage(url: String, contentScale: ContentScale, modifier: RemoteModifier)
 
 3. Modifier Skills
-
-
-
 Chain capabilities starting strictly with RemoteModifier.
-
 Allowed chain operations: .fillMaxSize(), .fillMaxWidth(), .height(value.rdp), .width(value.rdp), .padding(value.rdp), and .background(Color.rc).
-
 """.trimIndent()
 
 val SDUI_JSON_SYSTEM_PROMPT = """
@@ -152,58 +159,137 @@ Any component can include a "modifier" object. Supported modifier properties inc
 - "cornerRadius" (Integer): Border radius (mapped to RemoteRoundedCornerShape).
 - "clickableAction" (String): The name of the `Action` to trigger when tapped (e.g., "navigate:home").
 
+# CRITICAL: Dark Glassmorphism Visual Style
+Every widget you generate MUST follow this dark, glassy visual language:
+- Background: Deep dark (#0A0A14 or #1A1A2E).
+- Cards/Containers: Semi-transparent white (#1AFFFFFF or #26FFFFFF) with rounded corners (16–40).
+- Text: White (#FFFFFF) for primary, muted (#99FFFFFF or #CCBAE6FD) for secondary.
+- Accent colors: Cyan #22D3EE, Indigo #6366F1, Fuchsia #D946EF, Pink #EC4899.
+- Large bold typography for hero numbers (fontSize 32–48, fontWeight Bold).
+- Spacious padding (24–32) inside glass containers.
+- Use RemoteBox with background #26FFFFFF and cornerRadius 16–24 for frosted glass cards.
+
+# CRITICAL: Countdown & Timer Widget Pattern
+When the user request involves a countdown, timer, deadline, or event tracking:
+1. Root: RemoteColumn with fillMaxSize, padding 16, background #0A0A14.
+2. Header: Small uppercase label (e.g., "COUNTDOWN TO") — fontSize 10–11, color #99FFFFFF, Bold.
+3. Title: Event name in accent color (e.g., #22D3EE) — fontSize 18–22, Bold.
+4. Spacer (height 16–24).
+5. Countdown Row: A RemoteRow containing 4 countdown unit boxes:
+   - Each unit: RemoteBox (width 72–80, height 80–90) with background #26FFFFFF, cornerRadius 16.
+   - contentAlignment Center, children: RemoteColumn with:
+     - Large number Text (fontSize 32–40, Bold, #FFFFFF).
+     - Small label Text (fontSize 9–11, #99FFFFFF) like "DAYS", "HRS", "MIN", "SEC".
+6. Spacer (height 16–24).
+7. Optional progress bar: RemoteBox (fillMaxWidth, height 6–8, background #1AFFFFFF, cornerRadius 3) with a child RemoteBox for the fill.
+8. Motivational sub-title Text (fontSize 13–14, color #CCBAE6FD).
+9. Compute countdown values from <DeviceContext> countdown_target_date if available, otherwise use reasonable placeholder values.
+
 # Generation Rules
 1. ALWAYS use valid hex codes for colors (e.g., "#000000").
 2. Only use the component types listed above. Do not invent types like "card" or "button". You must build buttons and cards using `RemoteBox` or `RemoteRow` combined with a `clickableAction` modifier and a `cornerRadius` background modifier.
-3. Keep the design clean, modern, and accessible.
+3. Follow the Dark Glassmorphism Visual Style for ALL widgets.
 4. Output raw JSON only.
 
-# Example Expected Output:
+# Example Expected Output (Dark Glassmorphism Countdown):
 {
-  "backgroundColor": "#F5F5F5",
+  "backgroundColor": "#0A0A14",
   "elements": [
     {
       "type": "RemoteColumn",
       "id": "1",
-      "modifier": {
-        "fillMaxSize": true,
-        "padding": 16
-      },
+      "modifier": { "fillMaxSize": true, "padding": 24 },
+      "horizontalAlignment": "CenterHorizontally",
       "children": [
         {
           "type": "RemoteText",
           "id": "2",
-          "text": "Native Server-Driven UI",
-          "color": "#1A1A2E",
-          "fontSize": 24,
+          "text": "COUNTDOWN TO",
+          "color": "#99FFFFFF",
+          "fontSize": 11,
+          "fontWeight": "Bold"
+        },
+        {
+          "type": "RemoteText",
+          "id": "3",
+          "text": "MY FIRST MARATHON",
+          "color": "#22D3EE",
+          "fontSize": 20,
           "fontWeight": "Bold"
         },
         {
           "type": "RemoteSpacer",
-          "id": "3",
-          "modifier": { "height": 16 }
+          "id": "s1",
+          "modifier": { "height": 24 }
         },
         {
-          "type": "RemoteBox",
+          "type": "RemoteRow",
           "id": "4",
-          "contentAlignment": "Center",
-          "modifier": {
-            "fillMaxWidth": true,
-            "background": "#6200EA",
-            "cornerRadius": 12,
-            "padding": 16,
-            "clickableAction": "action_submit"
-          },
+          "modifier": { "fillMaxWidth": true },
+          "horizontalArrangement": 12,
+          "verticalAlignment": "CenterVertically",
           "children": [
-             {
-                "type": "RemoteText",
-                "id": "5",
-                "text": "Tap to Submit",
-                "color": "#FFFFFF",
-                "fontSize": 16,
-                "fontWeight": "Medium"
-             }
+            {
+              "type": "RemoteBox",
+              "id": "d_box",
+              "contentAlignment": "Center",
+              "modifier": { "width": 72, "height": 80, "background": "#26FFFFFF", "cornerRadius": 16 },
+              "children": [
+                { "type": "RemoteColumn", "id": "d_col", "horizontalAlignment": "CenterHorizontally", "children": [
+                  { "type": "RemoteText", "id": "d_val", "text": "42", "color": "#FFFFFF", "fontSize": 36, "fontWeight": "Bold" },
+                  { "type": "RemoteText", "id": "d_lbl", "text": "DAYS", "color": "#99FFFFFF", "fontSize": 10 }
+                ]}
+              ]
+            },
+            {
+              "type": "RemoteBox",
+              "id": "h_box",
+              "contentAlignment": "Center",
+              "modifier": { "width": 72, "height": 80, "background": "#26FFFFFF", "cornerRadius": 16 },
+              "children": [
+                { "type": "RemoteColumn", "id": "h_col", "horizontalAlignment": "CenterHorizontally", "children": [
+                  { "type": "RemoteText", "id": "h_val", "text": "08", "color": "#FFFFFF", "fontSize": 36, "fontWeight": "Bold" },
+                  { "type": "RemoteText", "id": "h_lbl", "text": "HRS", "color": "#99FFFFFF", "fontSize": 10 }
+                ]}
+              ]
+            },
+            {
+              "type": "RemoteBox",
+              "id": "m_box",
+              "contentAlignment": "Center",
+              "modifier": { "width": 72, "height": 80, "background": "#26FFFFFF", "cornerRadius": 16 },
+              "children": [
+                { "type": "RemoteColumn", "id": "m_col", "horizontalAlignment": "CenterHorizontally", "children": [
+                  { "type": "RemoteText", "id": "m_val", "text": "30", "color": "#FFFFFF", "fontSize": 36, "fontWeight": "Bold" },
+                  { "type": "RemoteText", "id": "m_lbl", "text": "MIN", "color": "#99FFFFFF", "fontSize": 10 }
+                ]}
+              ]
+            },
+            {
+              "type": "RemoteBox",
+              "id": "s_box",
+              "contentAlignment": "Center",
+              "modifier": { "width": 72, "height": 80, "background": "#26FFFFFF", "cornerRadius": 16 },
+              "children": [
+                { "type": "RemoteColumn", "id": "s_col", "horizontalAlignment": "CenterHorizontally", "children": [
+                  { "type": "RemoteText", "id": "s_val", "text": "15", "color": "#22D3EE", "fontSize": 36, "fontWeight": "Bold" },
+                  { "type": "RemoteText", "id": "s_lbl", "text": "SEC", "color": "#99FFFFFF", "fontSize": 10 }
+                ]}
+              ]
+            }
           ]
+        },
+        {
+          "type": "RemoteSpacer",
+          "id": "s2",
+          "modifier": { "height": 24 }
+        },
+        {
+          "type": "RemoteText",
+          "id": "10",
+          "text": "Every step brings you closer to the finish line.",
+          "color": "#CCBAE6FD",
+          "fontSize": 13
         }
       ]
     }
@@ -266,11 +352,29 @@ Or use event actions:
 
 The renderer will intercept event names matching "appfn:xxx" patterns as local device functions.
 
+# CRITICAL: Dark Glassmorphism Visual Style
+Every widget you generate MUST follow this dark, glassy visual language:
+- Theme: Set primaryColor to a neon accent like "#22D3EE" (cyan) or "#6366F1" (indigo).
+- Background: Use Card components as frosted glass containers with dark styling.
+- Typography: Use h1/h2 variant for hero numbers, caption for labels.
+- Accent colors: Cyan #22D3EE, Indigo #6366F1, Fuchsia #D946EF.
+- Large bold typography for countdown numbers.
+
+# CRITICAL: Countdown & Timer Widget Pattern
+When the user request involves a countdown, timer, deadline, or event tracking:
+1. Use Column root with justify "center" and align "center".
+2. Add a small caption Text for the header label (e.g., "COUNTDOWN TO").
+3. Add an h3 Text for the event title with accent styling.
+4. Add a Row containing 4 Card components, one per countdown unit (DAYS, HRS, MIN, SEC).
+   - Each Card contains a Column with: h1 Text for the number, caption Text for the label.
+5. Add a caption Text for motivational sub-title.
+6. Compute countdown values from <DeviceContext> countdown_target_date if available.
+
 # Design Rules
 1. Always produce exactly 3 JSONL lines (createSurface, updateComponents, updateDataModel).
 2. One component MUST have "id":"root".
 3. Use the adjacency list pattern — reference children by ID, not inline.
-4. Make UI beautiful, modern, Material Design 3 styled.
+4. Make UI beautiful, modern, Dark Glassmorphism styled.
 5. Bind interactive values to the data model using {"path":"/key"}.
 """.trimIndent()
 
@@ -314,35 +418,261 @@ You must output ONLY valid, raw JSON. Do not include introductory text, explanat
    - The floatExpression uses sin(time * speed) to drive GPU-accelerated vertical oscillation.
    - Extract the speed multiplier from the expression.
 
+9. "CircularProgressRing" — An animated circular arc/ring indicator.
+   { "type": "CircularProgressRing", "progress": 0.75, "strokeColor": "#22D3EE", "ringBackgroundColor": "#1AFFFFFF", "strokeWidth": 6, "size": 80 }
+   - Renders a ring-shaped progress arc using Canvas drawArc.
+   - "progress" is a float 0.0–1.0 indicating how much of the ring is filled.
+   - "size" is the diameter in dp. "strokeWidth" is the ring thickness in dp.
+   - Use inside a Box with contentAlignment Center, then overlay a Text node for the value.
+
+## Non-Square / Organic Shape Containers
+
+10. "ShapeContainer" — Clip children into a named polygon shape (hexagon, star, blob, etc.).
+   { "type": "ShapeContainer", "shape": "hexagon", "cornerSmoothing": 0.2, "modifier": { ... }, "children": [...] }
+   - "shape" (String, required): One of "hexagon", "star", "blob", "pill", "squircle", "heart", "diamond", "octagon", "triangle", "circle".
+   - "cornerSmoothing" (Float, optional, default 0.2): Controls smoothness of corner rounding (0 = sharp, 1 = super smooth).
+   - "contentAlignment" (String, optional): Alignment for children ("Center", "TopStart", etc.).
+   - "modifier" (Object, optional): Standard modifier with background, padding, width, height, fillMaxSize, fillMaxWidth.
+   - PREFER ShapeContainer over plain Box for cards and containers to create organic, non-square widget shapes.
+   - Use "blob" or "squircle" for smooth organic containers, "hexagon"/"octagon" for geometric looks, "heart" for playful widgets.
+
+11. "MorphShapeContainer" — Animated morphing between two polygon shapes.
+   { "type": "MorphShapeContainer", "shapeA": "hexagon", "shapeB": "circle", "morphSpeed": 0.5, "cornerSmoothing": 0.2, "modifier": { ... }, "children": [...] }
+   - "shapeA" and "shapeB" (String, required): Two shape names (same values as ShapeContainer).
+   - "morphSpeed" (Float, optional, default 0.5): Speed of the morph animation.
+   - Continuously morphs between shapeA and shapeA for a mesmerizing animated container.
+   - Great for profile cards, hero elements, or interactive widgets.
+
+12. "HandDrawnContainer" — Container with organic, wobbly, hand-drawn style edges.
+   { "type": "HandDrawnContainer", "vertices": 12, "wobbleAmount": 8.0, "modifier": { ... }, "children": [...] }
+   - "vertices" (Integer, optional, default 12): Number of polygon vertices (more = smoother blob).
+   - "wobbleAmount" (Float, optional, default 8.0): How much each vertex deviates (higher = more wobbly).
+   - Creates a charming, organic, hand-drawn border effect — perfect for sketchy/playful widgets.
+
+# CRITICAL: Prefer Non-Square Shapes
+When generating widget containers, PREFER using ShapeContainer, MorphShapeContainer, or HandDrawnContainer instead of plain Box with cornerRadius.
+This creates visually distinctive, non-square widgets as shown in the user's reference screenshots.
+Only use plain Box with cornerRadius when the user explicitly asks for rectangular cards.
+
 ## Modifier Object (optional on any node)
 { "modifier": { "fillMaxSize": true, "fillMaxWidth": true, "padding": 16, "background": "#1A1A2E", "cornerRadius": 12 } }
 
 # Design Guidelines
-1. The root node should typically be a Box with fillMaxSize and a dark background.
+1. The root node should typically be a Box with fillMaxSize and a dark background (#0A0A14).
 2. Use LiquidGlassBackground as the first child for animated color mesh backgrounds.
 3. Overlay GlassContainer on top for frosted glass cards with content.
 4. Use FloatingGlassOrb as decorative elements.
 5. Keep designs visually stunning with bold color choices.
 6. Output raw JSON only — no explanations.
 
-# Example Output:
+# CRITICAL: Dark Glassmorphism Visual Style
+Every widget you generate MUST follow this dark, glassy visual language:
+- Background: Deep dark (#0A0A14) with LiquidGlassBackground animated blobs.
+- Cards/Containers: Semi-transparent white (#1AFFFFFF or #26FFFFFF) with rounded corners (24–40).
+- Text: White (#FFFFFF) for primary, muted (#99FFFFFF or #CCBAE6FD) for secondary.
+- Accent colors: Cyan #22D3EE, Indigo #6366F1, Fuchsia #D946EF, Pink #EC4899.
+- Large bold typography for hero numbers (fontSize 48–72, fontWeight Bold).
+- Spacious padding (24–32) inside glass containers.
+- Use GlassContainer for EVERY visible card/section — never plain opaque boxes.
+
+# CRITICAL: Countdown & Timer Widget Pattern
+When the user request involves a countdown, timer, deadline, or event tracking:
+1. Use a Box root with fillMaxSize + dark background.
+2. Add LiquidGlassBackground as the first child.
+3. Place a GlassContainer in the center for the main content.
+4. Inside the GlassContainer, create a Column with:
+   a. A small uppercase header label (e.g., "COUNTDOWN TO", "MARATHON DAY") — fontSize 10–12, color #99FFFFFF, letterSpacing not supported, use uppercase text.
+   b. A Spacer (height 16–24).
+   c. A Row containing 4 countdown unit cards, each wrapped in a Box with contentAlignment Center:
+      - Each unit is a Box (width/height 70–80) with background #26FFFFFF and cornerRadius 16.
+      - Inside each Box: a Column centered with the large number Text (fontSize 32–48, Bold, #FFFFFF) and a small label Text (fontSize 9–11, #99FFFFFF) like "DAYS", "HRS", "MIN", "SEC".
+   d. A Spacer (height 16–24).
+   e. Optional: A "CircularProgressRing" showing overall progress toward the target date.
+   f. A motivational sub-title Text (fontSize 14–16, color #CCBAE6FD).
+5. Add FloatingGlassOrb elements for decoration.
+6. Compute the countdown values from the <DeviceContext> countdown_target_date if available, otherwise use reasonable placeholder values (e.g., 42 days, 08 hours, 30 minutes, 15 seconds).
+
+# Example Output (Countdown Widget):
 {
   "type": "Box",
   "modifier": { "fillMaxSize": true, "background": "#0A0A14" },
   "children": [
     { "type": "LiquidGlassBackground", "colors": ["#6366F1", "#22D3EE", "#D946EF"] },
-    { "type": "Box", "modifier": { "fillMaxSize": true, "background": "#000000", "cornerRadius": 0 } },
-    { "type": "GlassContainer", "blurRadius": 30, "cornerRadius": 24, "fillMaxWidth": true, "children": [
-      { "type": "Column", "modifier": { "padding": 32 }, "children": [
-        { "type": "Text", "text": "Glass UI", "color": "#FFFFFF", "fontSize": 28, "fontWeight": "Bold" },
-        { "type": "Spacer", "height": 16 },
-        { "type": "Text", "text": "Hardware-accelerated effects", "color": "#BAE6FD", "fontSize": 14 }
+    { "type": "Box", "modifier": { "fillMaxSize": true, "background": "#000000" } },
+    { "type": "GlassContainer", "blurRadius": 30, "cornerRadius": 32, "fillMaxWidth": true, "children": [
+      { "type": "Column", "horizontalAlignment": "CenterHorizontally", "modifier": { "padding": 32 }, "children": [
+        { "type": "Text", "text": "COUNTDOWN TO", "color": "#99FFFFFF", "fontSize": 11, "fontWeight": "Bold" },
+        { "type": "Spacer", "height": 4 },
+        { "type": "Text", "text": "MY FIRST MARATHON", "color": "#22D3EE", "fontSize": 20, "fontWeight": "Bold" },
+        { "type": "Spacer", "height": 24 },
+        { "type": "Row", "horizontalArrangement": 12, "verticalAlignment": "CenterVertically", "children": [
+          { "type": "Box", "contentAlignment": "Center", "modifier": { "width": 72, "height": 80, "background": "#26FFFFFF", "cornerRadius": 16 }, "children": [
+            { "type": "Column", "horizontalAlignment": "CenterHorizontally", "children": [
+              { "type": "Text", "text": "42", "color": "#FFFFFF", "fontSize": 36, "fontWeight": "Bold" },
+              { "type": "Text", "text": "DAYS", "color": "#99FFFFFF", "fontSize": 10 }
+            ]}
+          ]},
+          { "type": "Box", "contentAlignment": "Center", "modifier": { "width": 72, "height": 80, "background": "#26FFFFFF", "cornerRadius": 16 }, "children": [
+            { "type": "Column", "horizontalAlignment": "CenterHorizontally", "children": [
+              { "type": "Text", "text": "08", "color": "#FFFFFF", "fontSize": 36, "fontWeight": "Bold" },
+              { "type": "Text", "text": "HRS", "color": "#99FFFFFF", "fontSize": 10 }
+            ]}
+          ]},
+          { "type": "Box", "contentAlignment": "Center", "modifier": { "width": 72, "height": 80, "background": "#26FFFFFF", "cornerRadius": 16 }, "children": [
+            { "type": "Column", "horizontalAlignment": "CenterHorizontally", "children": [
+              { "type": "Text", "text": "30", "color": "#FFFFFF", "fontSize": 36, "fontWeight": "Bold" },
+              { "type": "Text", "text": "MIN", "color": "#99FFFFFF", "fontSize": 10 }
+            ]}
+          ]},
+          { "type": "Box", "contentAlignment": "Center", "modifier": { "width": 72, "height": 80, "background": "#26FFFFFF", "cornerRadius": 16 }, "children": [
+            { "type": "Column", "horizontalAlignment": "CenterHorizontally", "children": [
+              { "type": "Text", "text": "15", "color": "#22D3EE", "fontSize": 36, "fontWeight": "Bold" },
+              { "type": "Text", "text": "SEC", "color": "#99FFFFFF", "fontSize": 10 }
+            ]}
+          ]}
+        ]},
+        { "type": "Spacer", "height": 24 },
+        { "type": "Text", "text": "Every step brings you closer to the finish line.", "color": "#CCBAE6FD", "fontSize": 13 }
       ]}
     ]},
-    { "type": "FloatingGlassOrb", "baseColor": "#EC4899", "floatExpression": "sin(time * 2.0) * 20" }
+    { "type": "FloatingGlassOrb", "baseColor": "#6366F1", "floatExpression": "sin(time * 1.5) * 25" },
+    { "type": "FloatingGlassOrb", "baseColor": "#22D3EE", "floatExpression": "sin(time * 2.0) * 20" }
   ]
 }
 """.trimIndent()
+
+val LIQUID_GLASS_RC_JSON = """
+{
+  "backgroundColor": "#0A0A14",
+  "elements": [
+    {
+      "type": "RemoteBox",
+      "id": "root",
+      "modifier": {
+        "fillMaxSize": true,
+        "background": "#0A0A14"
+      },
+      "children": [
+        {
+          "type": "RemoteBox",
+          "id": "glass_card",
+          "contentAlignment": "Center",
+          "modifier": {
+            "width": 360,
+            "height": 580,
+            "background": "#1AFFFFFF",
+            "cornerRadius": 40,
+            "padding": 32
+          },
+          "children": [
+            {
+              "type": "RemoteColumn",
+              "id": "content",
+              "horizontalAlignment": "CenterHorizontally",
+              "children": [
+                {
+                  "type": "RemoteRow",
+                  "id": "header",
+                  "modifier": { "fillMaxWidth": true },
+                  "children": [
+                    {
+                      "type": "RemoteText",
+                      "id": "now_playing",
+                      "text": "NOW PLAYING",
+                      "color": "#99FFFFFF",
+                      "fontSize": 10,
+                      "fontWeight": "Bold"
+                    }
+                  ]
+                },
+                { "type": "RemoteSpacer", "id": "s1", "modifier": { "height": 32 } },
+                {
+                  "type": "RemoteBox",
+                  "id": "art",
+                  "modifier": {
+                    "width": 200,
+                    "height": 200,
+                    "background": "#FF22D3EE",
+                    "cornerRadius": 100
+                  }
+                },
+                { "type": "RemoteSpacer", "id": "s2", "modifier": { "height": 32 } },
+                {
+                  "type": "RemoteText",
+                  "id": "title",
+                  "text": "Nebula Drift",
+                  "color": "#FFFFFF",
+                  "fontSize": 28,
+                  "fontWeight": "Bold"
+                },
+                {
+                  "type": "RemoteText",
+                  "id": "artist",
+                  "text": "Synthwave Explorers",
+                  "color": "#CCBAE6FD",
+                  "fontSize": 14
+                },
+                { "type": "RemoteSpacer", "id": "s3", "modifier": { "height": 32 } },
+                {
+                  "type": "RemoteBox",
+                  "id": "progress_bg",
+                  "modifier": {
+                    "fillMaxWidth": true,
+                    "height": 8,
+                    "background": "#1AFFFFFF",
+                    "cornerRadius": 4
+                  },
+                  "children": [
+                    {
+                      "type": "RemoteBox",
+                      "id": "progress_fill",
+                      "modifier": {
+                        "width": 120,
+                        "height": 8,
+                        "background": "#FF6366F1",
+                        "cornerRadius": 4
+                      }
+                    }
+                  ]
+                },
+                { "type": "RemoteSpacer", "id": "s4", "modifier": { "height": 32 } },
+                {
+                  "type": "RemoteRow",
+                  "id": "controls",
+                  "modifier": { "fillMaxWidth": true },
+                  "children": [
+                     {
+                        "type": "RemoteBox",
+                        "id": "play_btn",
+                        "modifier": {
+                            "width": 80,
+                            "height": 80,
+                            "background": "#26FFFFFF",
+                            "cornerRadius": 40,
+                            "clickableAction": "appfn:toast?message=Playing..."
+                        },
+                        "children": [
+                            {
+                                "type": "RemoteText",
+                                "id": "play_icon",
+                                "text": "▶",
+                                "color": "#FFFFFF",
+                                "fontSize": 32
+                            }
+                        ]
+                     }
+                  ]
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}
+""".trimIndent()
+
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -362,9 +692,9 @@ fun GeneratorScreen(
     var statusMessage by remember { mutableStateOf<String?>(null) }
 
     // Model selection state
-    var selectedModel by remember { mutableStateOf("GLM 5.1") }
+    var selectedModel by remember { mutableStateOf("GLM") }
     val geminiModels = listOf("Gemini", "Gemini JSON", "Gemini A2UI")
-    val glmModels = listOf("GLM 5.1", "GLM JSON", "GLM A2UI")
+    val glmModels = listOf("GLM", "GLM JSON", "GLM A2UI")
     val pasteModels = listOf("Paste DSL", "Paste JSON", "Paste A2UI")
     val predefinedModels = listOf("Liquid Glass")
     val cmwModels = listOf("Gemini CMW", "GLM CMW", "Paste CMW")
@@ -388,6 +718,8 @@ fun GeneratorScreen(
             "Paste DSL" -> "粘贴 Remote Compose Kotlin DSL 代码，发送到后端编译。"
             "Paste JSON" -> "粘贴 JSON UI 描述，直接在本地渲染，无需后端。"
             "Paste A2UI" -> "粘贴 A2UI JSONL 消息，直接渲染为原生 Android UI。"
+            "Gemini" -> "输入自然语言描述，Gemini 将生成 SDUI JSON 并编译为 RC 文档渲染。"
+            "GLM" -> "输入自然语言描述，GLM 将生成 SDUI JSON 并编译为 RC 文档渲染。"
             "GLM JSON" -> "输入自然语言描述，GLM 将生成 SDUI JSON 并在本地渲染。"
             "GLM A2UI" -> "输入自然语言描述，GLM 将生成 A2UI 协议 JSONL 并渲染为原生 Android UI。"
             "Gemini JSON" -> "输入自然语言描述，Gemini 将生成 SDUI JSON 并在本地渲染。"
@@ -569,6 +901,8 @@ fun GeneratorScreen(
             "Paste JSON" -> "🚀 直接渲染"
             "Paste A2UI" -> "🚀 直接渲染"
             "Liquid Glass" -> "✨ 渲染音乐播放器"
+            "Gemini" -> "✨ 生成并渲染"
+            "GLM" -> "✨ 生成并渲染"
             "GLM JSON" -> "✨ 生成并渲染"
             "GLM A2UI" -> "✨ 生成并渲染"
             "Gemini CMW" -> "✨ 生成并渲染"
@@ -576,7 +910,7 @@ fun GeneratorScreen(
             "Paste CMW" -> "🚀 直接渲染"
             "Gemini JSON" -> "✨ 生成并渲染"
             "Gemini A2UI" -> "✨ 生成并渲染"
-            else -> "✨ 生成并预览"
+            else -> "🚀 编译并渲染"
         }
         Button(
             onClick = {
@@ -938,73 +1272,124 @@ fun GeneratorScreen(
                     return@Button
                 }
 
-                // ── AI / Paste DSL: remote compilation ──
-                coroutineScope.launch(Dispatchers.IO) {
-                    try {
-                        var tokens: String? = null
-                        var speed: String? = null
-                        val cleanedJson = if (selectedModel == "Paste DSL") {
-                            withContext(Dispatchers.Main) {
-                                statusMessage = "正在解析 DSL..."
-                            }
-                            cleanJsonResponse(prompt)
-                        } else {
-                            // Inject device context for DSL mode too
+                // ── Gemini: RC JSON AST → Backend Compile → RemoteCompose Player ──
+                if (selectedModel == "Gemini") {
+                    isLoading = true
+                    errorMessage = null
+                    coroutineScope.launch(Dispatchers.IO) {
+                        try {
                             val contextJson = AppFunctionManager.getDeviceContext(context).toString()
                             val enrichedPrompt = """
                                 <DeviceContext>
                                 $contextJson
                                 </DeviceContext>
-                                
+
                                 User Request: $prompt
                             """.trimIndent()
                             withContext(Dispatchers.Main) {
-                                statusMessage = "正在采集本地 AppFunctions 状态并调用 $selectedModel API..."
-                            }
-                            // 1. Call selected AI API with enriched prompt
-                            val aiResult = if (selectedModel == "Gemini") {
-                                callGeminiApi(enrichedPrompt)
-                            } else {
-                                callGlmApi(enrichedPrompt)
-                            }
-                            val jsonResponse = aiResult.content
-                            tokens = aiResult.tokenUsage
-                            speed = aiResult.speed
-                            withContext(Dispatchers.Main) {
-                                android.util.Log.d("Generator", "AI response: $jsonResponse")
-                                statusMessage = "$selectedModel 响应:\n${jsonResponse.take(200)}..."
+                                statusMessage = "正在生成 RC JSON AST..."
                             }
 
-                            // 2. Clean and parse JSON
-                            val cleaned = cleanJsonResponse(jsonResponse)
-                            android.util.Log.d("Generator", "Cleaned JSON: $cleaned")
-                            cleaned
+                            val aiResult = callGeminiJsonApi(enrichedPrompt)
+                            val jsonAst = cleanJsonResponse(aiResult.content)
+                            android.util.Log.d("Generator", "Gemini RC AST JSON: $jsonAst")
+
+                            withContext(Dispatchers.Main) {
+                                statusMessage = "正在编译 RC 文档..."
+                            }
+
+                            val rcBytes = RcCompiler.compileJsonToRc(jsonAst)
+                                ?: throw IllegalStateException("Backend compilation failed — no bytes returned")
+
+                            withContext(Dispatchers.Main) {
+                                statusMessage = "RC 文档编译成功 (${rcBytes.size} bytes)"
+                                viewModel.setGeneratedData(rcBytes, jsonAst, aiResult.tokenUsage, aiResult.speed)
+                                isLoading = false
+                                onGenerationSuccess()
+                            }
+                        } catch (e: Exception) {
+                            val detail = e.message ?: e.javaClass.simpleName
+                            withContext(Dispatchers.Main) {
+                                errorMessage = "Gemini 生成失败: $detail"
+                                statusMessage = null
+                                isLoading = false
+                            }
                         }
+                    }
+                    return@Button
+                }
+
+                // ── GLM: RC JSON AST → Backend Compile → RemoteCompose Player ──
+                if (selectedModel == "GLM") {
+                    isLoading = true
+                    errorMessage = null
+                    coroutineScope.launch(Dispatchers.IO) {
+                        try {
+                            val contextJson = AppFunctionManager.getDeviceContext(context).toString()
+                            val enrichedPrompt = """
+                                <DeviceContext>
+                                $contextJson
+                                </DeviceContext>
+
+                                User Request: $prompt
+                            """.trimIndent()
+                            withContext(Dispatchers.Main) {
+                                statusMessage = "正在生成 RC JSON AST..."
+                            }
+
+                            val aiResult = callGlmJsonApi(enrichedPrompt)
+                            val jsonAst = cleanJsonResponse(aiResult.content)
+                            android.util.Log.d("Generator", "GLM RC AST JSON: $jsonAst")
+
+                            withContext(Dispatchers.Main) {
+                                statusMessage = "正在编译 RC 文档..."
+                            }
+
+                            val rcBytes = RcCompiler.compileJsonToRc(jsonAst)
+                                ?: throw IllegalStateException("Backend compilation failed — no bytes returned")
+
+                            withContext(Dispatchers.Main) {
+                                statusMessage = "RC 文档编译成功 (${rcBytes.size} bytes)"
+                                viewModel.setGeneratedData(rcBytes, jsonAst, aiResult.tokenUsage, aiResult.speed)
+                                isLoading = false
+                                onGenerationSuccess()
+                            }
+                        } catch (e: Exception) {
+                            val detail = e.message ?: e.javaClass.simpleName
+                            withContext(Dispatchers.Main) {
+                                errorMessage = "GLM 生成失败: $detail"
+                                statusMessage = null
+                                isLoading = false
+                            }
+                        }
+                    }
+                    return@Button
+                }
+
+                // ── Paste DSL: remote compilation ──
+                coroutineScope.launch(Dispatchers.IO) {
+                    try {
+                        withContext(Dispatchers.Main) {
+                            statusMessage = "正在编译 DSL..."
+                        }
+                        val cleanedJson = cleanJsonResponse(prompt)
 
                         withContext(Dispatchers.Main) {
                             statusMessage = "正在编译 RC 文档..."
                         }
-
-                        // 3. Compile DSL to RC bytes
                         val rcBytes = RcCompiler.fetchRcBytesFromBackend(cleanedJson)
                             ?: throw IllegalStateException("Backend compilation failed — no bytes returned")
+
                         withContext(Dispatchers.Main) {
                             statusMessage = "RC 文档生成成功 (${rcBytes.size} bytes)"
-                        }
-
-                        // 4. Store in ViewModel and navigate
-                        withContext(Dispatchers.Main) {
-                            viewModel.setGeneratedData(rcBytes, cleanedJson, tokens, speed)
+                            viewModel.setGeneratedData(rcBytes, cleanedJson)
                             isLoading = false
                             onGenerationSuccess()
                         }
                     } catch (e: Exception) {
                         val detail = e.message ?: e.javaClass.simpleName
-                        val cause = e.cause
-                        val causeDetail = if (cause != null) "\nCause: ${cause.message ?: cause.javaClass.simpleName}" else ""
-                        val stackTop = e.stackTrace.firstOrNull()?.let { "\n at ${it.className}.${it.methodName}(${it.fileName}:${it.lineNumber})" } ?: ""
                         withContext(Dispatchers.Main) {
-                            errorMessage = "操作失败: $detail$causeDetail$stackTop"
+                            errorMessage = "编译失败: $detail"
                             statusMessage = null
                             isLoading = false
                         }
@@ -1037,7 +1422,7 @@ fun GeneratorScreen(
         )
 
         Text(
-            text = "1. 选择 AI 模型 (Gemini 或 GLM 5.1)\n" +
+            text = "1. 选择 AI 模型 (Gemini 或 GLM)\n" +
                     "2. 在上方输入你想要的 UI 描述\n" +
                     "3. 点击「生成并预览」按钮\n" +
                     "4. AI 将生成 JSON 并编译为 RC 文档\n" +
@@ -1102,37 +1487,6 @@ data class AiResult(
     val tokenUsage: String? = null,
     val speed: String? = null
 )
-
-/**
- * Call the Gemini API with the user's prompt and system instruction.
- */
-private suspend fun callGeminiApi(prompt: String): AiResult = withContext(Dispatchers.IO) {
-    try {
-        val apiKey = getGeminiApiKey()
-        val startTime = System.currentTimeMillis()
-
-        val model = GenerativeModel(
-            modelName = "gemini-3.5-flash",
-            apiKey = apiKey,
-            systemInstruction = content { text(REMOTE_COMPOSE_SYSTEM_PROMPT) }
-        )
-
-        val response = model.generateContent(prompt)
-        val endTime = System.currentTimeMillis()
-        val result = response.text ?: throw IllegalStateException("Empty response from Gemini")
-        
-        val usage = response.usageMetadata
-        val tokens = usage?.let { "${it.totalTokenCount} tokens" }
-        val duration = (endTime - startTime) / 1000.0
-        val speed = if (duration > 0 && usage != null) {
-            String.format("%.1f tokens/s", usage.candidatesTokenCount / duration)
-        } else null
-
-        AiResult(result, tokens, speed)
-    } catch (e: Exception) {
-        throw Exception("Gemini API 调用失败: ${e.message}", e)
-    }
-}
 
 /**
  * Call the Gemini API with the SDUI JSON system prompt.
@@ -1221,85 +1575,7 @@ private suspend fun callGeminiJsonApi(prompt: String): AiResult = withContext(Di
 }
 
 /**
- * Call the GLM 5.1 API (Zhipu AI) with the user's prompt.
- * Uses OpenAI-compatible REST API via OkHttp.
- */
-private suspend fun callGlmApi(prompt: String): AiResult = withContext(Dispatchers.IO) {
-    try {
-        val apiKey = "0a5cd5342cd24f2f8e4e44af433be613.AOsuKOY2hIaOKgVT"
-        val client = OkHttp3Client.Builder()
-            .connectTimeout(30, java.util.concurrent.TimeUnit.SECONDS)
-            .readTimeout(120, java.util.concurrent.TimeUnit.SECONDS)
-            .writeTimeout(30, java.util.concurrent.TimeUnit.SECONDS)
-            .build()
-
-        val startTime = System.currentTimeMillis()
-        // Build request JSON
-        val requestJson = JSONObject().apply {
-            put("model", "glm-4-flash")
-            put("messages", org.json.JSONArray().apply {
-                // System message
-                put(JSONObject().apply {
-                    put("role", "system")
-                    put("content", REMOTE_COMPOSE_SYSTEM_PROMPT)
-                })
-                // User message
-                put(JSONObject().apply {
-                    put("role", "user")
-                    put("content", prompt)
-                })
-            })
-            put("max_tokens", 2048)
-            put("temperature", 0.7)
-        }
-
-        val body = requestJson.toString()
-            .toRequestBody("application/json; charset=utf-8".toMediaType())
-
-        val request = OkHttp3Request.Builder()
-            .url("https://open.bigmodel.cn/api/paas/v4/chat/completions")
-            .addHeader("Authorization", "Bearer $apiKey")
-            .addHeader("Content-Type", "application/json")
-            .post(body)
-            .build()
-
-        val response = client.newCall(request).execute()
-        val endTime = System.currentTimeMillis()
-        val responseBody = response.body?.string()
-            ?: throw IllegalStateException("Empty response body from GLM")
-
-        if (!response.isSuccessful) {
-            throw IllegalStateException(
-                "GLM API error ${response.code}: ${responseBody.take(300)}"
-            )
-        }
-
-        // Parse OpenAI-compatible response
-        val json = JSONObject(responseBody)
-        val choices = json.getJSONArray("choices")
-        if (choices.length() == 0) {
-            throw IllegalStateException("No choices in GLM response")
-        }
-        val message = choices.getJSONObject(0).getJSONObject("message")
-        val content = message.getString("content")
-        
-        val usage = json.optJSONObject("usage")
-        val tokens = usage?.let { "${it.optInt("total_tokens")} tokens" }
-        val completionTokens = usage?.optInt("completion_tokens") ?: 0
-        val duration = (endTime - startTime) / 1000.0
-        val speed = if (duration > 0 && completionTokens > 0) {
-            String.format("%.1f tokens/s", completionTokens / duration)
-        } else null
-
-        AiResult(content, tokens, speed)
-    } catch (e: Exception) {
-        throw Exception("GLM API 调用失败: ${e.message}", e)
-    }
-}
-
-/**
- * Call the GLM 5.1 API with the SDUI JSON system prompt.
- * Same API key and endpoint as callGlmApi, but uses SDUI_JSON_SYSTEM_PROMPT.
+ * Call the GLM API with the SDUI JSON system prompt.
  */
 private suspend fun callGlmJsonApi(prompt: String): AiResult = withContext(Dispatchers.IO) {
     try {
